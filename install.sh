@@ -3,7 +3,7 @@
 
 set -e
 
-REPO_URL="https://github.com/RousevGH/rinse"
+REPO_URL="https://github.com/Rousevv/rinse"
 TEMP_DIR="/tmp/rinse-install-$$"
 INSTALL_DIR="/usr/local/bin"
 CONFIG_DIR="$HOME/.config/rinse"

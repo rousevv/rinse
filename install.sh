@@ -1,43 +1,79 @@
 #!/bin/bash
 # install.sh - Install rinse to /usr/local/bin
 
-set -e
+# Strict mode: Exit on error, undefined vars, and pipe failures
+set -euo pipefail
 
-REPO_URL="https://github.com/Rousevv/rinse"
+# --- Configuration ---
+REPO_URL="https://github.com/RousevGH/rinse"
+# Create a unique temp directory using the script's PID
 TEMP_DIR="/tmp/rinse-install-$$"
 INSTALL_DIR="/usr/local/bin"
 CONFIG_DIR="$HOME/.config/rinse"
 
-echo "=== rinse installer ==="
-echo ""
+# --- Colors ---
+readonly GREEN='\033[0;32m'
+readonly RED='\033[0;31m'
+readonly NC='\033[0m' # No Color
+
+# --- Helper Functions ---
+info() {
+    echo -e "${GREEN}=== rinse installer ===${NC}"
+    echo ""
+}
+
+success() {
+    echo -e "${GREEN}✓${NC} $1"
+}
+
+error() {
+    echo -e "${RED}Error:${NC} $1" >&2
+}
+
+# Cleanup function to remove temp files on exit or error
+cleanup() {
+    if [ -d "$TEMP_DIR" ]; then
+        # cd to / to avoid "device or resource busy" errors if we are currently inside the dir
+        cd /
+        rm -rf "$TEMP_DIR"
+    fi
+}
+
+# Register the cleanup function to run when the script exits
+trap cleanup EXIT
+
+# --- Start Installation ---
+info
 
 # Check for required tools
 if ! command -v git &> /dev/null; then
-    echo "Error: git is required but not installed"
+    error "git is required but not installed."
     exit 1
 fi
 
 if ! command -v g++ &> /dev/null; then
-    echo "Error: g++ is required but not installed"
+    error "g++ is required but not installed."
     exit 1
 fi
 
+# Create temp directory
+mkdir -p "$TEMP_DIR"
+
 # Clone repository
 echo "[1/5] Cloning repository..."
-git clone --depth 1 "$REPO_URL" "$TEMP_DIR" 2>/dev/null || {
-    echo "Error: Failed to clone repository"
-    echo "Falling back to local build..."
-    
-    # If clone fails, check if we're running from the repo
-    if [ -f "rinse.cpp" ]; then
+if git clone --depth 1 "$REPO_URL" "$TEMP_DIR" 2>/dev/null; then
+    cd "$TEMP_DIR"
+else
+    # If clone fails, check if we're running from the repo locally
+    if [ -f "rinse.cpp" ] || [ -f "rinse_latest.cpp" ]; then
+        echo "    Clone failed, using local directory..."
         TEMP_DIR="."
+        cd "$TEMP_DIR"
     else
-        echo "Error: rinse.cpp not found"
+        error "Failed to clone repository and no local source found."
         exit 1
     fi
-}
-
-cd "$TEMP_DIR"
+fi
 
 # Find the source file
 echo "[2/5] Locating source file..."
@@ -46,7 +82,7 @@ if [ -f "rinse_latest.cpp" ]; then
 elif [ -f "rinse.cpp" ]; then
     SOURCE_FILE="rinse.cpp"
 else
-    echo "Error: No source file found (expected rinse.cpp or rinse_latest.cpp)"
+    error "No source file found (expected rinse.cpp or rinse_latest.cpp)."
     exit 1
 fi
 
@@ -54,23 +90,29 @@ echo "    Found: $SOURCE_FILE"
 
 # Build binary
 echo "[3/5] Building rinse..."
-g++ -std=c++17 -O3 "$SOURCE_FILE" -o rinse || {
-    echo "Error: Compilation failed"
+if g++ -std=c++17 -O3 "$SOURCE_FILE" -o rinse; then
+    success "Build successful"
+else
+    error "Compilation failed."
     exit 1
-}
-
-echo "    Build successful"
+fi
 
 # Install binary
 echo "[4/5] Installing to $INSTALL_DIR..."
+
+# Check if we need sudo
 if [ -w "$INSTALL_DIR" ]; then
+    # We have write permissions, run normally
     cp rinse "$INSTALL_DIR/rinse"
+    chmod +x "$INSTALL_DIR/rinse"
 else
+    # We do NOT have write permissions, use sudo
+    echo "    Root privileges required for installation."
     sudo cp rinse "$INSTALL_DIR/rinse"
+    sudo chmod +x "$INSTALL_DIR/rinse"
 fi
 
-chmod +x "$INSTALL_DIR/rinse"
-echo "    Installed: $INSTALL_DIR/rinse"
+success "Installed: $INSTALL_DIR/rinse"
 
 # Create config directory
 echo "[5/5] Setting up configuration..."
@@ -80,7 +122,7 @@ mkdir -p "$CONFIG_DIR"
 if [ -f "rinse.conf" ]; then
     if [ ! -f "$CONFIG_DIR/rinse.conf" ]; then
         cp rinse.conf "$CONFIG_DIR/rinse.conf"
-        echo "    Created: $CONFIG_DIR/rinse.conf"
+        success "Created: $CONFIG_DIR/rinse.conf"
     else
         echo "    Config already exists, skipping"
     fi
@@ -100,18 +142,12 @@ notify = true
 # Default time threshold for outdated packages
 outdated_time = 6m
 EOF
-        echo "    Created default config: $CONFIG_DIR/rinse.conf"
+        success "Created default config: $CONFIG_DIR/rinse.conf"
     fi
 fi
 
-# Cleanup
-if [ "$TEMP_DIR" != "." ]; then
-    cd /
-    rm -rf "$TEMP_DIR"
-fi
-
 echo ""
-echo "✓ Installation complete!"
+echo "Installation complete!"
 echo ""
 echo "Usage:"
 echo "  rinse <package>      Install a package"

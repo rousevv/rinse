@@ -636,7 +636,7 @@ void install_packages(const std::vector<std::string>& pkgs) {
         }
         std::cout << CYAN << "\nInstalling from Flatpak..." << RESET << std::endl;
         for (const auto& pkg : flatpak_pkgs) {
-            std::string cmd = "flatpak install -y flathub " + sanitize_package(pkg) + " --user";
+            std::string cmd = "flatpak install -y flathub " + sanitize_package(pkg) + " --system";
             show_progress(cmd, "Installing");
         }
     }

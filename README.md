@@ -1,5 +1,5 @@
 # rinse
-
+NOTE: This readme is AI generated because i didn't want to sit down for sevral hours to do this. Small bits and pieces of the code for stuff i don't know how to do personally are also AI.
 > Fast CLI frontend for pacman and AUR - Arch Linux package management made simple.
 
 rinse is a lightweight terminal tool that wraps pacman and yay.

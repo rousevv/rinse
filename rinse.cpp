@@ -253,7 +253,7 @@ void show_progress(const std::string& cmd, const std::string& action = "Processi
         auto now = std::chrono::steady_clock::now();
         auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - start).count();
         
-        // Faster progress: reach 95% in ~10 seconds
+        // Simulate progress bar
         if (elapsed < 10000) {
             percent = std::min(95, (int)(elapsed * 95 / 10000));
         } else {
@@ -479,7 +479,7 @@ void update_system() {
     } else if (g_full_log) {
         system("sudo pacman -Syu --noconfirm");
     } else {
-        // Real progress tracking for updates
+        // Progress tracking for updates
         int total = pkgs.size();
         int current = 0;
         

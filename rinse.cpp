@@ -748,51 +748,34 @@ void update_rinse() {
 
     if (!confirm("rinse update available (" + remote_short + "). Install?", true)) return;
 
-    // Now clone and install
-    std::string temp_dir = "/tmp/rinse-update-" + std::to_string(time(nullptr));
-    std::string clone_cmd = "git clone --depth 1 --branch " + branch + " https://github.com/Rousevv/rinse " + sanitize_path(temp_dir) + " >/dev/null 2>&1";
+    std::cout << CYAN << "Starting update in background..." << RESET << std::endl;
+    std::cout << YELLOW << "rinse will exit now. The update will complete shortly." << RESET << std::endl;
 
-    if (exec_status(clone_cmd) != 0) {
-        std::cerr << RED << "✗ Failed to download update" << RESET << std::endl;
-        return;
-    }
+    // Save the target version hash before exiting
+    std::ofstream vf(version_file);
+    vf << remote_hash;
+    vf.close();
 
-    std::string source_file;
-    if (fs::exists(temp_dir + "/rinse.cpp")) source_file = temp_dir + "/rinse.cpp";
-    else {
-        exec_status(("rm -rf " + sanitize_path(temp_dir)).c_str());
-        std::cerr << RED << "✗ Source file not found" << RESET << std::endl;
-        return;
-    }
+    // Run the install script in background after this process exits
+    // Use nohup and redirect all output to /dev/null for silent operation
+    std::string install_cmd = "(sleep 0.5; curl -sSL https://raw.githubusercontent.com/rousevv/rinse/" +
+    sanitize_config(branch) +
+    "/install.sh | bash >/dev/null 2>&1; " +
+    "notify-send 'rinse' 'Update complete' 2>/dev/null) &";
 
-    std::cout << CYAN << "Building update..." << RESET << std::endl;
-    if (exec_status(("g++ -std=c++17 -O3 " + sanitize_path(source_file) + " -o " + sanitize_path(temp_dir) + "/rinse 2>/dev/null").c_str()) != 0) {
-        exec_status(("rm -rf " + sanitize_path(temp_dir)).c_str());
-        std::cerr << RED << "✗ Build failed" << RESET << std::endl;
-        return;
-    }
+    system(install_cmd.c_str());
 
-    if (exec_status(("sudo cp " + sanitize_path(temp_dir) + "/rinse " + sanitize_path(rinse_path) + " && sudo chmod +x " + sanitize_path(rinse_path)).c_str()) == 0) {
-        // Save the new version hash
-        std::ofstream vf(version_file);
-        vf << remote_hash;
-        vf.close();
-
-        std::cout << GREEN << "✓ rinse updated successfully" << RESET << std::endl;
-        send_notification("rinse updated to latest version");
-    } else {
-        std::cerr << RED << "✗ Failed to install update" << RESET << std::endl;
-    }
-
-    exec_status(("rm -rf " + sanitize_path(temp_dir)).c_str());
+    // Exit immediately so the binary can be replaced
+    std::cout << GREEN << "✓ Update initiated" << RESET << std::endl;
+    exit(0);
 }
 
 void update_system() {
-    update_rinse();
 
     std::string outdated = exec("pacman -Qu 2>/dev/null");
     if (outdated.empty()) {
         std::cout << GREEN << "✓ System is up to date" << RESET << std::endl;
+        update_rinse();
         return;
     }
 
@@ -820,6 +803,8 @@ void update_system() {
 
     std::cout << GREEN << "\n✓ Update complete" << RESET << std::endl;
     send_notification("System update complete");
+
+    update_rinse();
 }
 
 void lookup_packages(const std::vector<std::string>& search_terms = {}) {

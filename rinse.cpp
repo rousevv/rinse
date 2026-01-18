@@ -177,21 +177,12 @@ void send_notification(const std::string& msg) {
 std::string get_installed_flatpak_id(const std::string& pkg) {
     if (!check_flatpak()) return "";
 
-    // Check installed flatpaks
-    std::string result = exec("flatpak list --app 2>/dev/null | grep -i '" + sanitize_package(pkg) + "' | head -1");
+    // Use --columns=application to get only the app ID
+    std::string result = exec("flatpak list --app --columns=application 2>/dev/null | grep -i '" + sanitize_package(pkg) + "' | head -1");
 
     if (!result.empty()) {
-        // Parse the line to extract application ID (typically third column)
-        std::istringstream iss(result);
-        std::string name, description, app_id;
-        std::getline(iss, name, '\t');
-        std::getline(iss, description, '\t');
-        std::getline(iss, app_id, '\t');
-
-        app_id = trim(app_id);
-        if (!app_id.empty()) {
-            return sanitize_package(app_id);
-        }
+        result = trim(result);
+        return sanitize_package(result);
     }
 
     return "";
@@ -636,7 +627,7 @@ void install_packages(const std::vector<std::string>& pkgs) {
         }
         std::cout << CYAN << "\nInstalling from Flatpak..." << RESET << std::endl;
         for (const auto& pkg : flatpak_pkgs) {
-            std::string cmd = "flatpak install -y flathub " + sanitize_package(pkg) + " --user";
+            std::string cmd = "flatpak install -y flathub " + sanitize_package(pkg);
             show_progress(cmd, "Installing");
         }
     }

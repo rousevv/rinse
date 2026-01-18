@@ -12,6 +12,9 @@
 #include <regex>
 #include <cstdlib>
 #include <unistd.h>
+#include <thread>
+#include <atomic>
+#include <sys/ioctl.h>
 
 namespace fs = std::filesystem;
 
@@ -190,6 +193,41 @@ bool confirm(const std::string& prompt, bool default_yes = true) {
     return (response[0] == 'y' || response[0] == 'Y');
 }
 
+int get_terminal_width() {
+    struct winsize w;
+    ioctl(STDOUT_FILENO, TIOCGWINSZ, &w);
+    return w.ws_col > 0 ? w.ws_col : 80;
+}
+
+void draw_progress_bar(int percent) {
+    int width = get_terminal_width();
+    int bar_width = width - 10; // Leave space for percentage
+    
+    if (bar_width < 20) bar_width = 20;
+    
+    std::string percent_str = std::to_string(percent) + "%";
+    int filled = (percent * bar_width) / 100;
+    int empty = bar_width - filled;
+    
+    // Calculate center position for percentage
+    int total_content = filled + percent_str.length() + empty;
+    int center_pos = bar_width / 2 - percent_str.length() / 2;
+    
+    std::cout << "\r[";
+    
+    for (int i = 0; i < bar_width; i++) {
+        if (i >= center_pos && i < center_pos + (int)percent_str.length()) {
+            std::cout << RESET << percent_str[i - center_pos];
+        } else if (i < filled) {
+            std::cout << GREEN << "=";
+        } else {
+            std::cout << RED << "-";
+        }
+    }
+    
+    std::cout << RESET << "]" << std::flush;
+}
+
 void show_progress(const std::string& cmd, const std::string& action = "Processing") {
     if (g_dry_run) {
         std::cout << YELLOW << "[DRY RUN] Would execute: " << RESET << cmd << "\n";
@@ -201,13 +239,43 @@ void show_progress(const std::string& cmd, const std::string& action = "Processi
         return;
     }
     
-    // Simple animated progress bar
-    std::cout << CYAN << "[====================] " << action << "..." << RESET << "\n" << std::flush;
+    // Run command in background with progress animation
+    std::atomic<bool> done(false);
+    std::atomic<int> exit_code(0);
     
-    std::string silent_cmd = cmd + " > /dev/null 2>&1";
-    int status = system(silent_cmd.c_str());
+    // Thread to run the actual command
+    std::thread worker([&]() {
+        std::string silent_cmd = cmd + " > /dev/null 2>&1";
+        exit_code = system(silent_cmd.c_str());
+        done = true;
+    });
     
-    if (status != 0) {
+    // Animate progress bar
+    int percent = 0;
+    auto start = std::chrono::steady_clock::now();
+    
+    while (!done) {
+        auto now = std::chrono::steady_clock::now();
+        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - start).count();
+        
+        // Simulate progress (slower as it approaches 99%)
+        if (elapsed < 30000) { // First 30 seconds
+            percent = std::min(99, (int)(elapsed / 300));
+        } else {
+            percent = 99; // Stay at 99% until actually done
+        }
+        
+        draw_progress_bar(percent);
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    
+    // Show 100% when complete
+    draw_progress_bar(100);
+    std::cout << std::endl;
+    
+    worker.join();
+    
+    if (exit_code != 0) {
         std::cout << RED << "✗ Failed" << RESET << std::endl;
         std::cout << "Running with output for debugging:" << std::endl;
         system(cmd.c_str());

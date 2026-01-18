@@ -1,5 +1,4 @@
 // rinse - Fast CLI frontend for pacman and AUR
-// Copyright (C) 2025 RousevGH
 // License: GPL-3.0
 // Compile: g++ -std=c++17 -O3 rinse.cpp -o rinse
 

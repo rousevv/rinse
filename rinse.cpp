@@ -14,6 +14,7 @@
 #include <unistd.h>
 #include <thread>
 #include <atomic>
+#include <chrono>
 #include <sys/ioctl.h>
 
 namespace fs = std::filesystem;
@@ -29,7 +30,8 @@ const char* CYAN = "\033[36m";
 struct Config {
     bool keep_build = false;
     bool notify = true;
-    bool disable_auto_update = false;
+    bool auto_update = true;
+    std::string update_branch = "main";
     std::string outdated_time = "6m";
 };
 
@@ -37,6 +39,7 @@ Config g_config;
 bool g_dry_run = false;
 bool g_keep = false;
 bool g_full_log = false;
+bool g_auto_confirm = false;
 
 std::string trim(const std::string& str) {
     size_t first = str.find_first_not_of(" \t\n\r");
@@ -111,7 +114,35 @@ int parse_time_value(const std::string& val) {
 
 void load_config() {
     std::string config_path = get_home() + "/.config/rinse/rinse.conf";
-    if (!fs::exists(config_path)) return;
+    
+    if (!fs::exists(config_path)) {
+        // Create config directory
+        fs::create_directories(get_home() + "/.config/rinse");
+        
+        // Try to download from GitHub
+        std::string download_cmd = "curl -s https://raw.githubusercontent.com/Rousevv/rinse/main/rinse.conf -o " + config_path + " 2>/dev/null";
+        if (exec_status(download_cmd) != 0) {
+            // Create default config if download fails
+            std::ofstream file(config_path);
+            file << "# rinse configuration file\n\n";
+            file << "# Keep build files after AUR installation\n";
+            file << "# If true, build directories will be kept in /tmp for debugging\n";
+            file << "keep_build = false\n\n";
+            file << "# Send desktop notifications when operations complete\n";
+            file << "# Requires notify-send to be installed\n";
+            file << "notify = true\n\n";
+            file << "# Automatically check for rinse updates on 'rinse update'\n";
+            file << "# Set to false to disable self-updates\n";
+            file << "auto_update = true\n\n";
+            file << "# Branch to pull updates from (main or experimental)\n";
+            file << "# Use 'experimental' to test bleeding-edge features\n";
+            file << "update_branch = main\n\n";
+            file << "# Default time threshold for 'rinse outdated' command\n";
+            file << "# Format: Nd (days), Nm (months), Ny (years)\n";
+            file << "outdated_time = 6m\n";
+            file.close();
+        }
+    }
     
     std::ifstream file(config_path);
     std::string line;
@@ -133,7 +164,8 @@ void load_config() {
             
             if (key == "keep_build") g_config.keep_build = (val == "true");
             else if (key == "notify") g_config.notify = (val == "true");
-            else if (key == "disable_auto_update") g_config.disable_auto_update = (val == "true");
+            else if (key == "auto_update") g_config.auto_update = (val == "true");
+            else if (key == "update_branch") g_config.update_branch = val;
             else if (key == "outdated_time") g_config.outdated_time = val;
         }
     }
@@ -169,12 +201,43 @@ bool package_in_pacman(const std::string& pkg) {
     return exec_status("pacman -Si " + pkg + " >/dev/null 2>&1") == 0;
 }
 
+std::string fuzzy_search_package(const std::string& query) {
+    std::string all_pkgs = exec("pacman -Q");
+    std::istringstream iss(all_pkgs);
+    std::string line;
+    
+    std::vector<std::pair<std::string, int>> matches;
+    
+    while (std::getline(iss, line)) {
+        std::string pkg_name = line.substr(0, line.find(' '));
+        std::string lower_pkg = pkg_name;
+        std::string lower_query = query;
+        std::transform(lower_pkg.begin(), lower_pkg.end(), lower_pkg.begin(), ::tolower);
+        std::transform(lower_query.begin(), lower_query.end(), lower_query.begin(), ::tolower);
+        
+        if (lower_pkg.find(lower_query) != std::string::npos) {
+            int score = 100 - std::abs((int)lower_pkg.length() - (int)lower_query.length());
+            matches.push_back({pkg_name, score});
+        }
+    }
+    
+    if (!matches.empty()) {
+        std::sort(matches.begin(), matches.end(), 
+                  [](const auto& a, const auto& b) { return a.second > b.second; });
+        return matches[0].first;
+    }
+    
+    return "";
+}
+
 bool package_in_aur(const std::string& pkg) {
     return exec_status("curl -s 'https://aur.archlinux.org/rpc/?v=5&type=info&arg=" + pkg + 
                       "' | grep -q '\"resultcount\":1'") == 0;
 }
 
 bool confirm(const std::string& prompt, bool default_yes = true) {
+    if (g_auto_confirm) return true;
+    
     bool has_suffix = prompt.find("[Y/n]") != std::string::npos || 
                       prompt.find("[y/N]") != std::string::npos;
     
@@ -189,6 +252,11 @@ bool confirm(const std::string& prompt, bool default_yes = true) {
     std::getline(std::cin, response);
     response = trim(response);
     
+    if (response == "yes") {
+        g_auto_confirm = true;
+        return true;
+    }
+    
     if (response.empty()) return default_yes;
     return (response[0] == 'y' || response[0] == 'Y');
 }
@@ -200,24 +268,24 @@ int get_terminal_width() {
     return std::min(width, 120); // Cap at 120 chars
 }
 
-void draw_progress_bar(int percent) {
+void draw_progress_bar(int percent, bool failed = false) {
     int width = get_terminal_width();
     int bar_width = width - 10;
     
     if (bar_width < 20) bar_width = 20;
     
-    std::string percent_str = std::to_string(percent) + "%";
-    int filled = (percent * bar_width) / 100;
+    std::string center_text = failed ? "FAILED" : std::to_string(percent) + "%";
+    int filled = failed ? bar_width : (percent * bar_width) / 100;
     
-    int center_pos = bar_width / 2 - percent_str.length() / 2;
+    int center_pos = bar_width / 2 - center_text.length() / 2;
     
     std::cout << "\r[";
     
     for (int i = 0; i < bar_width; i++) {
-        if (i >= center_pos && i < center_pos + (int)percent_str.length()) {
-            std::cout << RESET << percent_str[i - center_pos];
+        if (i >= center_pos && i < center_pos + (int)center_text.length()) {
+            std::cout << (failed ? RED : RESET) << BOLD << center_text[i - center_pos] << RESET;
         } else if (i < filled) {
-            std::cout << GREEN << "=";
+            std::cout << (failed ? RED : GREEN) << "=";
         } else {
             std::cout << RED << "-";
         }
@@ -233,8 +301,16 @@ void show_progress(const std::string& cmd, const std::string& action = "Processi
     }
     
     if (g_full_log) {
-        system(cmd.c_str());
+        int status = system(cmd.c_str());
+        if (status != 0) {
+            std::cout << RED << "✗ Operation failed" << RESET << std::endl;
+        }
         return;
+    }
+    
+    // Pre-authenticate sudo to avoid password prompt during progress bar
+    if (cmd.find("sudo") != std::string::npos) {
+        system("sudo -v");
     }
     
     std::atomic<bool> done(false);
@@ -246,6 +322,9 @@ void show_progress(const std::string& cmd, const std::string& action = "Processi
         done = true;
     });
     
+    // Small delay to let sudo authenticate before showing progress
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    
     int percent = 0;
     auto start = std::chrono::steady_clock::now();
     
@@ -253,33 +332,22 @@ void show_progress(const std::string& cmd, const std::string& action = "Processi
         auto now = std::chrono::steady_clock::now();
         auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - start).count();
         
-        // Simulate progress bar
-        if (elapsed < 10000) {
-            percent = std::min(95, (int)(elapsed * 95 / 10000));
-        } else {
-            percent = 95;
-        }
-        
+        percent = std::min(95, (int)(elapsed * 95 / 10000));
         draw_progress_bar(percent);
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }
     
-    draw_progress_bar(100);
-    std::cout << std::endl;
-    
     worker.join();
     
     if (exit_code != 0) {
-        std::cout << RED << "✗ Failed" << RESET << std::endl;
-        std::cout << "Running with output for debugging:" << std::endl;
+        draw_progress_bar(100, true);
+        std::cout << std::endl;
+        std::cout << RED << "Running with output for debugging:" << RESET << std::endl;
         system(cmd.c_str());
+    } else {
+        draw_progress_bar(100);
+        std::cout << std::endl;
     }
-}
-
-void show_update_progress(int current, int total) {
-    if (total == 0) return;
-    int percent = (current * 100) / total;
-    draw_progress_bar(percent);
 }
 
 void ensure_yay() {
@@ -347,7 +415,28 @@ void install_packages(const std::vector<std::string>& pkgs) {
                 }
             }
         } else {
-            not_found.push_back(pkg);
+            // Check for installed packages with fuzzy match
+            std::string fuzzy = fuzzy_search_package(pkg);
+            if (!fuzzy.empty() && is_installed(fuzzy)) {
+                std::cout << YELLOW << "Package \"" << pkg << "\" not found, but \"" << fuzzy 
+                         << "\" is already installed." << RESET << std::endl;
+            } else {
+                // Check pacman repos for fuzzy match
+                std::string search_result = exec("pacman -Ss '^" + pkg + "' 2>/dev/null | head -1");
+                if (!search_result.empty()) {
+                    std::string suggested = search_result.substr(0, search_result.find(' '));
+                    if (suggested.find('/') != std::string::npos) {
+                        suggested = suggested.substr(suggested.find('/') + 1);
+                    }
+                    std::cout << YELLOW << "Package \"" << pkg << "\" not found. Did you mean \"" 
+                             << suggested << "\"?" << RESET << std::endl;
+                    if (confirm("Install \"" + suggested + "\" instead?", false)) {
+                        pacman_pkgs.push_back(suggested);
+                    }
+                } else {
+                    not_found.push_back(pkg);
+                }
+            }
         }
     }
     
@@ -377,13 +466,35 @@ void install_packages(const std::vector<std::string>& pkgs) {
     }
 }
 
-void remove_package(const std::string& pkg) {
-    if (!is_installed(pkg)) {
-        std::cerr << RED << "Package \"" << pkg << "\" is not installed" << RESET << std::endl;
-        return;
+void remove_package(const std::vector<std::string>& pkgs) {
+    std::vector<std::string> to_remove;
+    
+    for (const auto& pkg : pkgs) {
+        if (!is_installed(pkg)) {
+            std::string fuzzy = fuzzy_search_package(pkg);
+            if (!fuzzy.empty()) {
+                std::cout << YELLOW << "Package \"" << pkg << "\" is not installed, but a package called \"" 
+                         << fuzzy << "\" is." << RESET << std::endl;
+                if (confirm("Did you mean \"" + fuzzy + "\"?", true)) {
+                    to_remove.push_back(fuzzy);
+                }
+            } else {
+                std::cerr << RED << "Package \"" << pkg << "\" is not installed" << RESET << std::endl;
+            }
+            continue;
+        }
+        to_remove.push_back(pkg);
     }
     
-    if (!confirm("Remove package \"" + pkg + "\"?", true)) return;
+    if (to_remove.empty()) return;
+    
+    std::string pkg_list;
+    for (size_t i = 0; i < to_remove.size(); i++) {
+        pkg_list += to_remove[i];
+        if (i < to_remove.size() - 1) pkg_list += ", ";
+    }
+    
+    if (!confirm("Remove package" + std::string(to_remove.size() > 1 ? "s" : "") + " \"" + pkg_list + "\"?", true)) return;
     
     std::string orphans = exec("pacman -Qtdq 2>/dev/null");
     bool remove_orphans = false;
@@ -394,14 +505,14 @@ void remove_package(const std::string& pkg) {
     
     std::string cmd = "sudo pacman -R";
     if (remove_orphans) cmd += "ns";
-    cmd += " --noconfirm " + pkg;
+    cmd += " --noconfirm";
+    for (const auto& pkg : to_remove) cmd += " " + pkg;
     
     show_progress(cmd, "Removing");
-    std::cout << GREEN << "✓ Removal complete" << RESET << std::endl;
 }
 
 void update_rinse() {
-    if (g_config.disable_auto_update) return;
+    if (!g_config.auto_update) return;
     
     std::string rinse_path = trim(exec("command -v rinse 2>/dev/null"));
     if (rinse_path.empty()) return;
@@ -411,7 +522,10 @@ void update_rinse() {
     std::cout << CYAN << "Checking for rinse updates..." << RESET << std::endl;
     
     std::string temp_dir = "/tmp/rinse-update-" + std::to_string(time(nullptr));
-    if (exec_status("git clone --depth 1 https://github.com/Rousevv/rinse " + temp_dir + " >/dev/null 2>&1") != 0) return;
+    std::string branch = g_config.update_branch;
+    std::string clone_cmd = "git clone --depth 1 --branch " + branch + " https://github.com/Rousevv/rinse " + temp_dir + " >/dev/null 2>&1";
+    
+    if (exec_status(clone_cmd) != 0) return;
     
     std::string source_file;
     if (fs::exists(temp_dir + "/rinse_latest.cpp")) source_file = temp_dir + "/rinse_latest.cpp";
@@ -473,47 +587,11 @@ void update_system() {
     if (!confirm("Update all?", true)) return;
     
     std::cout << CYAN << "\nUpdating official packages..." << RESET << std::endl;
-    
-    if (g_dry_run) {
-        std::cout << YELLOW << "[DRY RUN] Would update packages" << RESET << std::endl;
-    } else if (g_full_log) {
-        system("sudo pacman -Syu --noconfirm");
-    } else {
-        // Progress tracking for updates
-        int total = pkgs.size();
-        int current = 0;
-        
-        std::atomic<bool> done(false);
-        
-        std::thread worker([&]() {
-            system("sudo pacman -Syu --noconfirm > /dev/null 2>&1");
-            done = true;
-        });
-        
-        while (!done) {
-            // Estimate progress
-            if (current < total) {
-                current++;
-                show_update_progress(current, total);
-            }
-            std::this_thread::sleep_for(std::chrono::milliseconds(200));
-        }
-        
-        show_update_progress(total, total);
-        std::cout << std::endl;
-        worker.join();
-    }
+    show_progress("sudo pacman -Syu --noconfirm", "Updating");
     
     if (check_command("yay")) {
         std::cout << CYAN << "Updating AUR packages..." << RESET << std::endl;
-        if (!g_dry_run) {
-            if (g_full_log) {
-                system("yay -Syu --noconfirm");
-            } else {
-                system("yay -Syu --noconfirm > /dev/null 2>&1");
-                std::cout << GREEN << "✓ AUR packages updated" << RESET << std::endl;
-            }
-        }
+        show_progress("yay -Syu --noconfirm", "Updating");
     }
     
     std::cout << GREEN << "\n✓ Update complete" << RESET << std::endl;
@@ -745,26 +823,27 @@ void print_help() {
     std::cout << "  rinse -Syu                   pacman-style update\n";
     std::cout << "  rinse -Syyu                  Force database refresh + update\n\n";
     
-    std::cout << "  rinse remove <pkg>           Remove a package\n";
-    std::cout << "  rinse uninstall <pkg>        Alias for remove\n";
-    std::cout << "  rinse rem <pkg>              Alias for remove\n";
-    std::cout << "  rinse -R <pkg>               pacman-style remove\n";
-    std::cout << "  rinse -Rs <pkg>              Remove with dependencies\n\n";
+    std::cout << "  rinse remove <pkg>...        Remove one or more packages\n";
+    std::cout << "  rinse uninstall <pkg>...     Alias for remove\n";
+    std::cout << "  rinse rem <pkg>...           Alias for remove\n";
+    std::cout << "  rinse -R <pkg>...            pacman-style remove\n";
+    std::cout << "  rinse -Rs <pkg>...           Remove with dependencies\n\n";
     
     std::cout << "  rinse clean                  Clean package cache and remove orphans\n";
     std::cout << "  rinse -Sc                    pacman-style cache clean\n";
     std::cout << "  rinse outdated               Show packages not updated recently\n\n";
     
     std::cout << BOLD << "QUERY COMMANDS:\n" << RESET;
-    std::cout << "  rinse lookup [term]          List/search installed packages\n";
-    std::cout << "  rinse check [term]           Alias for lookup\n";
-    std::cout << "  rinse list [term]            Alias for lookup\n";
-    std::cout << "  rinse search [term]          Alias for lookup\n";
-    std::cout << "  rinse -Q [term]              pacman-style query\n";
-    std::cout << "  rinse -Qs <term>             pacman-style search installed\n\n";
+    std::cout << "  rinse lookup [term]...       List/search installed packages\n";
+    std::cout << "  rinse check [term]...        Alias for lookup\n";
+    std::cout << "  rinse list [term]...         Alias for lookup\n";
+    std::cout << "  rinse search [term]...       Alias for lookup\n";
+    std::cout << "  rinse -Q [term]...           pacman-style query\n";
+    std::cout << "  rinse -Qs <term>...          pacman-style search installed\n\n";
     
     std::cout << BOLD << "FLAGS:\n" << RESET;
     std::cout << "  --dry-run, -n, dry           Show what would be done without doing it\n";
+    std::cout << "  -y, --yes                    Auto-confirm all prompts (skip confirmations)\n";
     std::cout << "  -k, --keep                   Keep build files after AUR installation\n";
     std::cout << "  --time <value>               Set time threshold for outdated command\n";
     std::cout << "                               Examples: 5d (days), 3m (months), 2y (years)\n";
@@ -773,20 +852,29 @@ void print_help() {
     
     std::cout << BOLD << "EXAMPLES:\n" << RESET;
     std::cout << "  rinse firefox                Install Firefox\n";
-    std::cout << "  rinse -S firefox discord     Install multiple packages\n";
-    std::cout << "  rinse remove neofetch        Remove a package\n";
+    std::cout << "  rinse -y firefox discord     Install multiple packages (auto-confirm)\n";
+    std::cout << "  rinse remove neofetch vim    Remove multiple packages\n";
     std::cout << "  rinse -Syu                   Update entire system\n";
     std::cout << "  rinse check fire             Search for 'fire' in installed packages\n";
     std::cout << "  rinse outdated --time 1y     Show packages not updated in 1 year\n";
     std::cout << "  rinse -n firefox             Dry run installation\n";
-    std::cout << "  rinse ./package.pkg.tar.zst  Install from local file\n\n";
+    std::cout << "  rinse ./package.pkg.tar.zst  Install from local file\n";
+    std::cout << "  rinse clean -y               Clean cache (auto-confirm)\n\n";
+    
+    std::cout << BOLD << "TIPS:\n" << RESET;
+    std::cout << "  • Type 'yes' during prompts to auto-confirm remaining operations\n";
+    std::cout << "  • Use -y flag to skip all confirmations: rinse -y update\n";
+    std::cout << "  • Fuzzy search suggests similar packages when not found\n";
+    std::cout << "  • Progress bars show red 'FAILED' text when operations fail\n";
+    std::cout << "  • Config file: ~/.config/rinse/rinse.conf\n\n";
     
     std::cout << BOLD << "CONFIGURATION:\n" << RESET;
     std::cout << "  Config file: " << CYAN << "~/.config/rinse/rinse.conf" << RESET << "\n";
     std::cout << "  Options:\n";
     std::cout << "    keep_build = true|false           Keep AUR build files (default: false)\n";
     std::cout << "    notify = true|false               Send desktop notifications (default: true)\n";
-    std::cout << "    disable_auto_update = true|false  Disable rinse self-updates (default: false)\n";
+    std::cout << "    auto_update = true|false          Auto-check for rinse updates (default: true)\n";
+    std::cout << "    update_branch = main|experimental Update branch (default: main)\n";
     std::cout << "    outdated_time = 6m                Default threshold for outdated command\n\n";
     
     std::cout << BOLD << "BEHAVIOR:\n" << RESET;
@@ -794,7 +882,8 @@ void print_help() {
     std::cout << "  • Official packages are installed before AUR packages\n";
     std::cout << "  • All pacman operations use a single call (no parallel runs)\n";
     std::cout << "  • yay is auto-installed if needed for AUR packages\n";
-    std::cout << "  • Desktop notifications sent when notify=true in config\n\n";
+    std::cout << "  • Desktop notifications sent when notify=true in config\n";
+    std::cout << "  • Sudo password requested once, then cached for operations\n\n";
     
     std::cout << BOLD << "SOURCE & ISSUES:\n" << RESET;
     std::cout << "  GitHub: " << CYAN << "https://github.com/Rousevv/rinse" << RESET << "\n";
@@ -817,7 +906,7 @@ int main(int argc, char* argv[]) {
     std::vector<std::string> args;
     std::string time_override = "";
     
-    for (int i = 1; i < argc; i++) {
+            for (int i = 1; i < argc; i++) {
         std::string arg = argv[i];
         
         if (arg == "--dry-run" || arg == "-n" || arg == "dry") {
@@ -826,6 +915,8 @@ int main(int argc, char* argv[]) {
             g_keep = true;
         } else if (arg == "--full-log") {
             g_full_log = true;
+        } else if (arg == "-y" || arg == "--yes") {
+            g_auto_confirm = true;
         } else if (arg == "--time" && i + 1 < argc) {
             time_override = argv[++i];
         } else if (arg == "--help" || arg == "-h" || arg == "-help" || arg == "--h" || arg == "help") {
@@ -852,7 +943,7 @@ int main(int argc, char* argv[]) {
             std::cerr << RED << "Error: No package specified\n" << RESET;
             return 1;
         }
-        remove_package(args[1]);
+        remove_package(std::vector<std::string>(args.begin() + 1, args.end()));
     } else if (cmd == "update" || cmd == "upgrade" || cmd == "new" || cmd == "-Syu" || cmd == "-Syyu") {
         update_system();
     } else if (cmd == "-Q" || cmd == "-Qs" || cmd == "lookup" || cmd == "check" || cmd == "list" || cmd == "search") {

@@ -771,13 +771,182 @@ void update_rinse() {
 }
 
 void update_system() {
-
+    // Sync databases first
+    std::cout << CYAN << "Syncing package databases..." << RESET << std::endl;
+    exec_status("sudo pacman -Sy > /dev/null 2>&1");
+    
+    // Check for outdated packages
     std::string outdated = exec("pacman -Qu 2>/dev/null");
-    if (outdated.empty()) {
+    std::string flatpak_outdated = "";
+    
+    if (check_flatpak()) {
+        flatpak_outdated = exec("flatpak remote-ls --updates 2>/dev/null");
+    }
+    
+    // Parse pacman packages
+    std::vector<std::string> pacman_pkgs;
+    std::istringstream iss(outdated);
+    std::string line;
+    while (std::getline(iss, line)) {
+        if (!line.empty()) {
+            pacman_pkgs.push_back(line.substr(0, line.find(' ')));
+        }
+    }
+    
+    // Parse flatpak packages
+    std::vector<std::string> flatpak_pkgs;
+    std::istringstream fiss(flatpak_outdated);
+    while (std::getline(fiss, line)) {
+        if (!line.empty()) {
+            // Extract app name from flatpak output (first column)
+            std::string app_name = line.substr(0, line.find('\t'));
+            if (!app_name.empty()) {
+                flatpak_pkgs.push_back(app_name);
+            }
+        }
+    }
+    
+    int total_packages = pacman_pkgs.size() + flatpak_pkgs.size();
+    
+    // If nothing to update
+    if (total_packages == 0) {
         std::cout << GREEN << "✓ System is up to date" << RESET << std::endl;
         update_rinse();
         return;
     }
+    
+    // Display outdated packages
+    std::cout << YELLOW << "Found " << total_packages << " outdated package"
+              << (total_packages == 1 ? "" : "s") << ":" << RESET << std::endl;
+    
+    if (!pacman_pkgs.empty()) {
+        std::cout << CYAN << "\nPacman/AUR packages:" << RESET << std::endl;
+        for (const auto& pkg : pacman_pkgs) {
+            std::cout << "  • " << pkg << std::endl;
+        }
+    }
+    
+    if (!flatpak_pkgs.empty()) {
+        std::cout << CYAN << "\nFlatpak packages:" << RESET << std::endl;
+        for (size_t i = 0; i < std::min(flatpak_pkgs.size(), size_t(10)); i++) {
+            std::cout << "  • " << flatpak_pkgs[i] << std::endl;
+        }
+        if (flatpak_pkgs.size() > 10) {
+            std::cout << "  ... and " << (flatpak_pkgs.size() - 10) << " more" << std::endl;
+        }
+    }
+    
+    std::cout << std::endl;
+    
+    if (!confirm("Update all?", true)) {
+        return;
+    }
+    
+    // Pre-authenticate sudo
+    if (!g_dry_run) {
+        system("sudo -v");
+    }
+    
+    std::atomic<bool> done(false);
+    std::atomic<int> exit_code(0);
+    std::atomic<int> packages_updated(0);
+    
+    // Start update in background thread
+    std::thread worker([&]() {
+        int result = 0;
+        
+        // Update pacman packages
+        if (!pacman_pkgs.empty()) {
+            if (g_dry_run) {
+                std::cout << YELLOW << "[DRY RUN] Would execute: sudo pacman -Syu --noconfirm" << RESET << std::endl;
+            } else {
+                result = system("sudo pacman -Syu --noconfirm > /dev/null 2>&1");
+                if (result == 0) {
+                    packages_updated += pacman_pkgs.size();
+                }
+            }
+            
+            // Update AUR if yay is available
+            if (check_command("yay") && result == 0) {
+                if (g_dry_run) {
+                    std::cout << YELLOW << "[DRY RUN] Would execute: yay -Syu --noconfirm" << RESET << std::endl;
+                } else {
+                    result = system("yay -Syu --noconfirm > /dev/null 2>&1");
+                }
+            }
+        }
+        
+        // Update flatpak packages
+        if (!flatpak_pkgs.empty() && result == 0) {
+            if (g_dry_run) {
+                std::cout << YELLOW << "[DRY RUN] Would execute: flatpak update -y" << RESET << std::endl;
+            } else {
+                result = system("flatpak update -y > /dev/null 2>&1");
+                if (result == 0) {
+                    packages_updated += flatpak_pkgs.size();
+                }
+            }
+        }
+        
+        exit_code = result;
+        done = true;
+    });
+    
+    // Show progress bar
+    if (!g_dry_run && !g_full_log) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        
+        int percent = 0;
+        auto start = std::chrono::steady_clock::now();
+        
+        while (!done) {
+            auto now = std::chrono::steady_clock::now();
+            auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - start).count();
+            
+            // Calculate progress based on packages updated
+            int packages_done = packages_updated.load();
+            if (total_packages > 0) {
+                percent = (packages_done * 95) / total_packages;
+            } else {
+                percent = std::min(95, (int)(elapsed * 95 / 30000)); // Fallback timing
+            }
+            
+            draw_progress_bar(percent);
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+        
+        worker.join();
+        
+        if (exit_code != 0) {
+            draw_progress_bar(100, true);
+            std::cout << std::endl;
+            std::cout << RED << "Update failed. Running with output for debugging:" << RESET << std::endl;
+            
+            if (!pacman_pkgs.empty()) {
+                system("sudo pacman -Syu --noconfirm");
+                if (check_command("yay")) {
+                    system("yay -Syu --noconfirm");
+                }
+            }
+            if (!flatpak_pkgs.empty()) {
+                system("flatpak update -y");
+            }
+        } else {
+            draw_progress_bar(100);
+            std::cout << std::endl;
+            std::cout << GREEN << "\n✓ Update complete" << RESET << std::endl;
+            std::cout << YELLOW << "Restarting your system is recommended" << RESET << std::endl;
+            send_notification("System update complete");
+        }
+    } else {
+        worker.join();
+        if (exit_code == 0 && !g_dry_run) {
+            std::cout << GREEN << "\n✓ Update complete" << RESET << std::endl;
+            std::cout << YELLOW << "Restarting your system is recommended" << RESET << std::endl;
+            send_notification("System update complete");
+        }
+    }
+}
 
     std::vector<std::string> pkgs;
     std::istringstream iss(outdated);
@@ -1154,6 +1323,7 @@ int main(int argc, char* argv[]) {
         remove_package(std::vector<std::string>(args.begin() + 1, args.end()));
     } else if (cmd == "update" || cmd == "upgrade" || cmd == "new" || cmd == "-Syu" || cmd == "-Syyu") {
         update_system();
+        update_rinse();
     } else if (cmd == "-Q" || cmd == "-Qs" || cmd == "lookup" || cmd == "check" || cmd == "list" || cmd == "search") {
         std::vector<std::string> search_terms(args.begin() + 1, args.end());
         lookup_packages(search_terms);

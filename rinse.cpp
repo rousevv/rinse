@@ -783,7 +783,6 @@ void update_rinse() {
     // Determine binary URL based on update branch
     std::string branch = sanitize_config(g_config.update_branch);
     std::string download_url;
-    exec("mkdir /tmp/rinse");
     
     if (branch == "main" || branch.empty()) {
         download_url = "https://github.com/Rousevv/rinse/releases/latest/download/rinse";
@@ -791,9 +790,9 @@ void update_rinse() {
         download_url = "https://github.com/Rousevv/rinse/raw/" + branch + "/rinse";
     }
     
-    exec("curl -L -o /tmp/rinse/ https://github.com/Rousevv/rinse/releases/latest/download/rinse");    
+    exec("curl -L -o /tmp/rinse https://github.com/Rousevv/rinse/releases/latest/download/rinse");    
 
-    exec("chmod +x /tmp/rinse/rinse");
+    exec("chmod +x /tmp/rinse");
 
     std::cout << CYAN << "Installing update..." << RESET << std::endl;
 
@@ -804,15 +803,15 @@ void update_rinse() {
         rinse_path = "/usr/bin/rinse";
     }
 
-    std::string install_cmd = "sudo cp /tmp/rinse/rinse " + sanitize_path(rinse_path);
+    std::string install_cmd = "sudo cp /tmp/rinse " + sanitize_path(rinse_path);
     if (exec_status(install_cmd.c_str()) != 0) {
         std::cout << RED << "✗ Failed to install update" << RESET << std::endl;
-        exec_status("rm -f /tmp/rinse/rinse");
+        exec_status("rm -f /tmp/rinse");
         return;
     }
 
     // Cleanup temp file
-    exec_status("rm -f /tmp/rinse/rinse");
+    exec_status("rm -f /tmp/rinse");
 
     // Save new version
     save_version(latest_version);

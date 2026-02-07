@@ -822,8 +822,6 @@ void update_rinse() {
         }
         
         download_verified = true;
-        break;
-    }
 
     if (!download_verified) {
         std::cout << RED << "Rinse update couldn't complete. Please try on a different, more trusted network or with a more stable connection." << RESET << std::endl;

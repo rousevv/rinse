@@ -799,7 +799,7 @@ void update_rinse() {
     std::ofstream script(update_script);
     script << "#!/bin/bash\n";
     script << "sleep 1\n";
-    script << "sudo cp /tmp/rinse " + sanitize_path(rinse_path) + "\n";
+    script << "sudo cp /tmp/rinse /usr/bin/rinse\n";
     script << "rm -f /tmp/rinse\n";
     script << "rm -f " + update_script + "\n";
     script << "echo '" << latest_version << "' > " << get_version_file_path() << "\n";
@@ -814,7 +814,7 @@ void update_rinse() {
     std::cout << GREEN << "✓ Update initiated successfully" << RESET << std::endl;
     }
 
-    std::string install_cmd = "sudo cp /tmp/rinse " + rinse_path;
+    std::string install_cmd = "sudo cp /tmp/rinse /usr/bin/rinse";
     if (exec_status(install_cmd.c_str()) != 0) {
         std::cout << RED << "✗ Failed to install update" << RESET << std::endl;
         exec_status("rm -f /tmp/rinse");

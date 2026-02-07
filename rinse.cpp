@@ -792,34 +792,21 @@ void update_rinse() {
     exec("curl -L -o /tmp/rinse https://github.com/Rousevv/rinse/releases/latest/download/rinse");    
 
     exec("chmod +x /tmp/rinse");
-
+    
     std::string update_script = "/tmp/rinse_updater.sh";
     std::ofstream script(update_script);
     script << "#!/bin/bash\n";
-    script << "sleep 1\n";
-    script << "sudo cp /tmp/rinse /usr/bin/rinse\n";
+    script << "sleep 0.5\n";
+    script << "sudo rm -f /usr/bin/rinse\n";
+    script << "sudo cp /tmp/rinse /usr/bin/\n";
     script << "rm -f /tmp/rinse\n";
-    script << "rm -f " + update_script + "\n";
     script << "echo '" << latest_version << "' > " << get_version_file_path() << "\n";
     script.close();
     
     exec_status(("chmod +x " + update_script).c_str());
     
-    std::cout << CYAN << "Installing update..." << RESET << std::endl;
-    
-    exec_status(("nohup " + update_script + " >/dev/null 2>&1 &").c_str());
-    
-    std::cout << GREEN << "✓ Update initiated successfully" << RESET << std::endl;
-
-    std::string install_cmd = "sudo cp /tmp/rinse /usr/bin/rinse";
-    if (exec_status(install_cmd.c_str()) != 0) {
-        std::cout << RED << "✗ Failed to install update" << RESET << std::endl;
-        exec_status("rm -f /tmp/rinse");
-        return;
-    }
-
-    // Cleanup temp file
-    exec_status("rm -f /tmp/rinse");
+    system((update_script + " &").c_str());
+    exit(0);
 }
 
 void lookup_packages(const std::vector<std::string>& search_terms = {}) {

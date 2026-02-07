@@ -27,6 +27,9 @@ const char* YELLOW = "\033[33m";
 const char* BLUE = "\033[34m";
 const char* CYAN = "\033[36m";
 
+const char* VERSION = "0.3.0";
+const char* VERSION_FILE = ".rinse_version";
+
 struct Config {
     bool keep_build = false;
     bool notify = true;
@@ -694,7 +697,6 @@ void remove_package(const std::vector<std::string>& pkgs) {
         show_progress(cmd, "Removing");
     }
 
-    // Remove Flatpak apps
     if (!flatpak_to_remove.empty()) {
         std::cout << CYAN << "\nRemoving Flatpak apps..." << RESET << std::endl;
         for (const auto& pkg : flatpak_to_remove) {
@@ -707,6 +709,28 @@ void remove_package(const std::vector<std::string>& pkgs) {
         std::cout << GREEN << "\n✓ Removal complete" << RESET << std::endl;
         send_notification("Package removal complete");
     }
+}
+
+std::string get_version_file_path() {
+    return get_home() + "/.config/rinse/" + VERSION_FILE;
+}
+
+std::string get_current_version() {
+    std::string version_path = get_version_file_path();
+    if (fs::exists(version_path)) {
+        std::ifstream file(version_path);
+        std::string version;
+        std::getline(file, version);
+        return trim(version);
+    }
+    return "unknown";
+}
+
+void save_version(const std::string& version) {
+    std::string version_path = get_version_file_path();
+    fs::create_directories(get_home() + "/.config/rinse");
+    std::ofstream file(version_path);
+    file << version;
 }
 
 std::string get_file_sha256(const std::string& filepath) {

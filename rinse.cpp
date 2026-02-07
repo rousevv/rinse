@@ -807,16 +807,16 @@ void update_rinse() {
         rinse_path = "/usr/bin/rinse";
     }
 
-    std::string install_cmd = "sudo cp " + sanitize_path(temp_binary) + " " + sanitize_path(rinse_path);
+    std::string install_cmd = "sudo cp /tmp/rinse/rinse " + sanitize_path(rinse_path);
     if (exec_status(install_cmd.c_str()) != 0) {
         std::cout << RED << "✗ Failed to install update" << RESET << std::endl;
         std::cout << YELLOW << "You may need to run: sudo cp " << temp_binary << " " << rinse_path << RESET << std::endl;
-        exec_status(("rm -f " + sanitize_path(temp_binary)).c_str());
+        exec_status(("rm -f /tmp/rinse/rinse");
         return;
     }
 
     // Cleanup temp file
-    exec_status(("rm -f " + sanitize_path(temp_binary)).c_str());
+    exec_status(("rm -f /tmp/rinse/rinse");
 
     // Save new version
     save_version(latest_version);

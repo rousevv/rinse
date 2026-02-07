@@ -790,7 +790,7 @@ void update_rinse() {
         download_url = "https://github.com/Rousevv/rinse/raw/" + branch + "/rinse";
     }
 
-    std::string temp_binary = /tmp/rinse;
+    std::string temp_binary = "/tmp/rinse";
     
     exec("curl -L -o" + temp_binary + "https://github.com/Rousevv/rinse/releases/latest/download/rinse");    
 

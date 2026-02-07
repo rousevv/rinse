@@ -790,6 +790,10 @@ void update_rinse() {
         download_url = "https://github.com/Rousevv/rinse/raw/" + branch + "/rinse";
     }
 
+    std::string temp_binary = /tmp/rinse;
+    
+    exec("curl -L -o" + temp_binary + "https://github.com/Rousevv/rinse/releases/latest/download/rinse");    
+
     if (exec_status(("chmod +x " + sanitize_path(temp_binary)).c_str()) != 0) {
         std::cout << RED << "✗ Failed to make binary executable" << RESET << std::endl;
         exec_status(("rm -f " + sanitize_path(temp_binary)).c_str());
@@ -802,7 +806,7 @@ void update_rinse() {
     rinse_path = trim(rinse_path);
     
     if (rinse_path.empty()) {
-        rinse_path = "/usr/local/bin/rinse";
+        rinse_path = "/usr/bin/rinse";
     }
 
     std::string install_cmd = "sudo cp " + sanitize_path(temp_binary) + " " + sanitize_path(rinse_path);

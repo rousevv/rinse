@@ -792,7 +792,7 @@ void update_rinse() {
     
     exec("curl -L -o /tmp/rinse/ https://github.com/Rousevv/rinse/releases/latest/download/rinse");    
 
-    exec("chmod +x /tmp/rinse/rinse")
+    exec("chmod +x /tmp/rinse/rinse");
 
     std::cout << CYAN << "Installing update..." << RESET << std::endl;
 

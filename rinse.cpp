@@ -779,8 +779,7 @@ void update_rinse() {
     if (!confirm("Update?", true)) {
         return;
     }
-
-    // Determine binary URL based on update branch
+    
     std::string branch = sanitize_config(g_config.update_branch);
     std::string download_url;
     
@@ -793,17 +792,29 @@ void update_rinse() {
     exec("curl -L -o /tmp/rinse https://github.com/Rousevv/rinse/releases/latest/download/rinse");    
 
     exec("chmod +x /tmp/rinse");
-
-    std::cout << CYAN << "Installing update..." << RESET << std::endl;
-
-    std::string rinse_path = exec("which rinse 2>/dev/null");
-    rinse_path = trim(rinse_path);
     
-    if (rinse_path.empty()) {
-        rinse_path = "/usr/bin/rinse";
+    rinse_path = "/usr/bin/rinse";
+
+    std::string update_script = "/tmp/rinse_updater.sh";
+    std::ofstream script(update_script);
+    script << "#!/bin/bash\n";
+    script << "sleep 1\n";
+    script << "sudo cp /tmp/rinse " + sanitize_path(rinse_path) + "\n";
+    script << "rm -f /tmp/rinse\n";
+    script << "rm -f " + update_script + "\n";
+    script << "echo '" << latest_version << "' > " << get_version_file_path() << "\n";
+    script.close();
+    
+    exec_status(("chmod +x " + update_script).c_str());
+    
+    std::cout << CYAN << "Installing update..." << RESET << std::endl;
+    
+    exec_status(("nohup " + update_script + " >/dev/null 2>&1 &").c_str());
+    
+    std::cout << GREEN << "✓ Update initiated successfully" << RESET << std::endl;
     }
 
-    std::string install_cmd = "sudo cp /tmp/rinse " + sanitize_path(rinse_path);
+    std::string install_cmd = "sudo cp /tmp/rinse " + rinse_path;
     if (exec_status(install_cmd.c_str()) != 0) {
         std::cout << RED << "✗ Failed to install update" << RESET << std::endl;
         exec_status("rm -f /tmp/rinse");
@@ -812,14 +823,6 @@ void update_rinse() {
 
     // Cleanup temp file
     exec_status("rm -f /tmp/rinse");
-
-    // Save new version
-    save_version(latest_version);
-
-    std::cout << GREEN << "✓ rinse updated successfully to version " << latest_version << RESET << std::endl;
-    std::cout << CYAN << "The new version will be used on the next invocation of rinse" << RESET << std::endl;
-    
-    send_notification("rinse updated to version " + latest_version);
 }
 
 void lookup_packages(const std::vector<std::string>& search_terms = {}) {

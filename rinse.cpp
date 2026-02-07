@@ -810,7 +810,6 @@ void update_rinse() {
     exec_status(("nohup " + update_script + " >/dev/null 2>&1 &").c_str());
     
     std::cout << GREEN << "✓ Update initiated successfully" << RESET << std::endl;
-    }
 
     std::string install_cmd = "sudo cp /tmp/rinse /usr/bin/rinse";
     if (exec_status(install_cmd.c_str()) != 0) {

@@ -783,6 +783,7 @@ void update_rinse() {
     // Determine binary URL based on update branch
     std::string branch = sanitize_config(g_config.update_branch);
     std::string download_url;
+    exec("mkdir /tmp/rinse");
     
     if (branch == "main" || branch.empty()) {
         download_url = "https://github.com/Rousevv/rinse/releases/latest/download/rinse";

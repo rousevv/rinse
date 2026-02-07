@@ -708,378 +708,186 @@ void remove_package(const std::vector<std::string>& pkgs) {
         send_notification("Package removal complete");
     }
 }
-void update_rinse() {
-    if (!g_config.auto_update) return;
 
-    std::string rinse_path = trim(exec("command -v rinse 2>/dev/null"));
-    if (rinse_path.empty()) return;
-
-    std::cout << CYAN << "Checking for rinse updates..." << RESET << std::flush;
-
-    // Get remote latest commit hash (fast, no cloning)
-    std::string branch = sanitize_config(g_config.update_branch);
-    std::string remote_hash = trim(exec("git ls-remote https://github.com/Rousevv/rinse refs/heads/" + branch + " 2>/dev/null | cut -f1"));
-
-    if (remote_hash.empty() || remote_hash.length() < 7) {
-        std::cout << "\r" << YELLOW << "Could not check for updates" << RESET << std::string(30, ' ') << std::endl;
-        return;
-    }
-
-    // Check if we have a stored version
-    std::string version_file = get_home() + "/.config/rinse/.version";
-    std::string local_hash = "";
-
-    if (fs::exists(version_file)) {
-        std::ifstream vf(version_file);
-        std::getline(vf, local_hash);
-        local_hash = trim(local_hash);
-    }
-
-    // Compare first 7 chars of commit hash
-    std::string remote_short = remote_hash.substr(0, 7);
-    std::string local_short = local_hash.length() >= 7 ? local_hash.substr(0, 7) : "";
-
-    if (remote_short == local_short && !local_short.empty()) {
-        std::cout << "\r" << GREEN << "✓ rinse is up to date" << RESET << std::string(30, ' ') << std::endl;
-        return;
-    }
-
-    std::cout << "\r" << std::string(50, ' ') << "\r";  // Clear line
-
-    if (!confirm("rinse update available (" + remote_short + "). Install?", true)) return;
-
-    std::cout << CYAN << "Starting update in background..." << RESET << std::endl;
-    std::cout << YELLOW << "rinse will exit now. The update will complete shortly." << RESET << std::endl;
-
-    // Save the target version hash before exiting
-    std::ofstream vf(version_file);
-    vf << remote_hash;
-    vf.close();
-
-    // Run the install script in background after this process exits
-    // Use nohup and redirect all output to /dev/null for silent operation
-    std::string install_cmd = "(sleep 0.5; curl -sSL https://raw.githubusercontent.com/rousevv/rinse/" +
-    sanitize_config(branch) +
-    "/install.sh | bash >/dev/null 2>&1; " +
-    "notify-send 'rinse' 'Update complete' 2>/dev/null) &";
-
-    system(install_cmd.c_str());
-
-    // Exit immediately so the binary can be replaced
-    std::cout << GREEN << "✓ Update initiated" << RESET << std::endl;
-    exit(0);
+std::string get_file_sha256(const std::string& filepath) {
+    std::string result = exec("sha256sum " + sanitize_path(filepath) + " 2>/dev/null | awk '{print $1}'");
+    return trim(result);
 }
 
 void update_system() {
-    std::cout << CYAN << "Syncing package databases..." << RESET << std::endl;
-    int sync_result = exec_status("sudo pacman -Sy > /dev/null 2>&1");
-    
-    if (sync_result != 0) {
-        std::cerr << RED << "Failed to sync databases" << RESET << std::endl;
-        return;
-    }
-    
-    std::string outdated;
-    if (check_command("yay")) {
-        outdated = exec("yay -Qu 2>/dev/null");
-    } else {
-        outdated = exec("pacman -Qu 2>/dev/null");
-    }
-    
-    std::string flatpak_outdated = "";
-    if (check_flatpak()) {
-        flatpak_outdated = exec("flatpak remote-ls --updates 2>/dev/null");
-    }
-    
-    int package_count = 0;
-    std::istringstream iss(outdated);
-    std::string line;
-    while (std::getline(iss, line)) {
-        if (!line.empty()) {
-            package_count++;
-        }
-    }
-    
-    int flatpak_count = 0;
-    std::istringstream fiss(flatpak_outdated);
-    while (std::getline(fiss, line)) {
-        if (!line.empty()) {
-            flatpak_count++;
-        }
-    }
-    
-    int total_count = package_count + flatpak_count;
-    
-    if (total_count == 0) {
-        std::cout << GREEN << "✓ System is up to date" << RESET << std::endl;
-        return;
-    }
-    
-    std::cout << YELLOW << "Found " << total_count << " outdated package";
-    if (total_count != 1) std::cout << "s";
-    std::cout << RESET << std::endl;
-    
-    if (package_count > 0) {
-        std::cout << CYAN << "\nPackages to update:" << RESET << std::endl;
-        std::istringstream show_iss(outdated);
-        std::string show_line;
-        int shown = 0;
-        while (std::getline(show_iss, show_line)) {
-            if (!show_line.empty() && shown < 15) {
-                std::cout << "  • " << show_line << std::endl;
-                shown++;
-            }
-        }
-        if (package_count > 15) {
-            std::cout << "  ... and " << (package_count - 15) << " more" << std::endl;
-        }
-    }
-    
-    if (flatpak_count > 0) {
-        std::cout << CYAN << "\nFlatpak packages to update:" << RESET << std::endl;
-        std::istringstream show_fiss(flatpak_outdated);
-        std::string show_line;
-        int shown = 0;
-        while (std::getline(show_fiss, show_line)) {
-            if (!show_line.empty() && shown < 10) {
-                std::cout << "  • " << show_line << std::endl;
-                shown++;
-            }
-        }
-        if (flatpak_count > 10) {
-            std::cout << "  ... and " << (flatpak_count - 10) << " more" << std::endl;
-        }
-    }
-    
-    std::cout << std::endl;
-    
-    if (!confirm("Update all?", true)) {
-        return;
-    }
-    
-    if (package_count > 0) {
-        if (g_dry_run) {
-            std::cout << YELLOW << "[DRY RUN] Would update " << package_count << " packages" << RESET << std::endl;
-        } else {
-            std::cout << CYAN << "\nUpdating packages..." << RESET << std::endl;
-            
-            std::string log_file = "/tmp/rinse-update-" + std::to_string(time(nullptr)) + ".log";
-            std::string update_cmd;
-            if (check_command("yay")) {
-                update_cmd = "yay -Syu --noconfirm 2>&1 | tee " + sanitize_path(log_file);
-            } else {
-                update_cmd = "sudo pacman -Syu --noconfirm 2>&1 | tee " + sanitize_path(log_file);
-            }
-            
-            if (update_cmd.find("sudo") != std::string::npos) {
-                system("sudo -v");
-            }
-            
-            std::atomic<bool> done(false);
-            std::atomic<int> exit_code(0);
-            
-            std::thread worker([&]() {
-                exit_code = system(update_cmd.c_str());
-                done = true;
-            });
-            
-            std::this_thread::sleep_for(std::chrono::milliseconds(500));
-            
-            int last_percent = 0;
-            while (!done) {
-                std::string log_content = exec("tail -100 " + sanitize_path(log_file) + " 2>/dev/null");
-                
-                int installed = 0;
-                std::istringstream log_iss(log_content);
-                std::string log_line;
-                while (std::getline(log_iss, log_line)) {
-                    if (log_line.find("installing") != std::string::npos || 
-                        log_line.find("upgrading") != std::string::npos ||
-                        log_line.find("reinstalling") != std::string::npos) {
-                        installed++;
-                    }
-                }
-                
-                int percent = package_count > 0 ? (installed * 100) / package_count : 0;
-                if (percent > 100) percent = 100;
-                if (percent < last_percent) percent = last_percent;
-                last_percent = percent;
-                
-                draw_progress_bar(percent);
-                std::this_thread::sleep_for(std::chrono::milliseconds(200));
-            }
-            
-            worker.join();
-            
-            exec_status(("rm -f " + sanitize_path(log_file)).c_str());
-            
-            if (exit_code != 0) {
-                draw_progress_bar(100, true);
-                std::cout << std::endl;
-                std::cout << RED << "Update encountered errors" << RESET << std::endl;
-            } else {
-                draw_progress_bar(100);
-                std::cout << std::endl;
-            }
-        }
-    }
-    
-    if (flatpak_count > 0) {
-        if (g_dry_run) {
-            std::cout << YELLOW << "[DRY RUN] Would update " << flatpak_count << " Flatpak packages" << RESET << std::endl;
-        } else {
-            std::cout << CYAN << "\nUpdating Flatpak packages..." << RESET << std::endl;
-            
-            std::string flatpak_log = "/tmp/rinse-flatpak-" + std::to_string(time(nullptr)) + ".log";
-            std::string flatpak_cmd = "flatpak update -y 2>&1 | tee " + sanitize_path(flatpak_log);
-            
-            std::atomic<bool> done(false);
-            std::atomic<int> exit_code(0);
-            
-            std::thread worker([&]() {
-                exit_code = system(flatpak_cmd.c_str());
-                done = true;
-            });
-            
-            std::this_thread::sleep_for(std::chrono::milliseconds(500));
-            
-            int last_percent = 0;
-            while (!done) {
-                std::string log_content = exec("tail -100 " + sanitize_path(flatpak_log) + " 2>/dev/null");
-                
-                int installed = 0;
-                std::istringstream log_iss(log_content);
-                std::string log_line;
-                while (std::getline(log_iss, log_line)) {
-                    if (log_line.find("Installing") != std::string::npos || 
-                        log_line.find("Updating") != std::string::npos) {
-                        installed++;
-                    }
-                }
-                
-                int percent = flatpak_count > 0 ? (installed * 100) / flatpak_count : 0;
-                if (percent > 100) percent = 100;
-                if (percent < last_percent) percent = last_percent;
-                last_percent = percent;
-                
-                draw_progress_bar(percent);
-                std::this_thread::sleep_for(std::chrono::milliseconds(200));
-            }
-            
-            worker.join();
-            
-            exec_status(("rm -f " + sanitize_path(flatpak_log)).c_str());
-            
-            if (exit_code != 0) {
-                draw_progress_bar(100, true);
-                std::cout << std::endl;
-            } else {
-                draw_progress_bar(100);
-                std::cout << std::endl;
-            }
-        }
-    }
-    
-    if (!g_dry_run) {
-        std::cout << GREEN << "\n✓ Update complete" << RESET << std::endl;
-        std::cout << YELLOW << "Restarting your system is recommended" << RESET << std::endl;
-        send_notification("System update complete");
-    }
-    
-    update_rinse();
+    if (!confirm("Update system? (This function is currently under major rebuilding, for now, it just updates directly.)", true)) { return; }
+    exec("sudo pacman --noconfirm -Syu");
+    exec("yay --noconfirm -Syu");
+    exec("flatpak update");
+    std::cout << BOLD << YELLOW << "System is updating. Please be patient. \n";
 }
 
-void lookup_packages(const std::vector<std::string>& search_terms = {}) {
-    if (search_terms.empty()) {
-        std::string result = exec("pacman -Q");
-        if (result.empty()) {
-            std::cout << YELLOW << "No packages installed" << RESET << std::endl;
-        } else {
-            std::cout << result;
-        }
-    } else {
-        std::vector<std::string> found;
-        std::string all_pkgs = exec("pacman -Q");
-        std::istringstream iss(all_pkgs);
-        std::string line;
-
-        while (std::getline(iss, line)) {
-            std::string pkg_name = line.substr(0, line.find(' '));
-
-            for (const auto& term : search_terms) {
-                std::string lower_pkg = pkg_name;
-                std::string lower_term = term;
-                std::transform(lower_pkg.begin(), lower_pkg.end(), lower_pkg.begin(), ::tolower);
-                std::transform(lower_term.begin(), lower_term.end(), lower_term.begin(), ::tolower);
-
-                if (lower_pkg.find(lower_term) != std::string::npos) {
-                    found.push_back(line);
-                    break;
-                }
-            }
-        }
-
-        if (found.empty()) {
-            std::cout << YELLOW << "No installed packages matching: ";
-            for (size_t i = 0; i < search_terms.size(); i++) {
-                std::cout << "\"" << search_terms[i] << "\"";
-                if (i < search_terms.size() - 1) std::cout << ", ";
-            }
-            std::cout << RESET << std::endl;
-        } else {
-            std::cout << GREEN << "Found " << found.size() << " package"
-                      << (found.size() == 1 ? "" : "s") << ":" << RESET << std::endl;
-            for (const auto& pkg : found) {
-                std::cout << "  " << pkg << std::endl;
-            }
-        }
-    }
-}
-    
-    if (flatpak_count > 0) {
-        std::cout << CYAN << "\nFlatpak packages to update:" << RESET << std::endl;
-        std::istringstream show_fiss(flatpak_outdated);
-        std::string show_line;
-        int shown = 0;
-        while (std::getline(show_fiss, show_line)) {
-            if (!show_line.empty() && shown < 10) {
-                std::cout << "  • " << show_line << std::endl;
-                shown++;
-            }
-        }
-        if (flatpak_count > 10) {
-            std::cout << "  ... and " << (flatpak_count - 10) << " more" << std::endl;
-        }
-    }
-    
-    std::cout << std::endl;
-    
-    if (!confirm("Update all?", true)) {
+void update_rinse() {
+    if (!g_config.auto_update) {
+        std::cout << YELLOW << "Auto-update is disabled in config" << RESET << std::endl;
         return;
     }
+
+    std::cout << CYAN << "Checking for rinse updates..." << RESET << std::endl;
+
+    std::string current_version = get_current_version();
+
+    std::string api_url = "https://api.github.com/repos/Rousevv/rinse/releases/latest";
+    std::string release_info = exec("curl -s " + api_url);
     
-    // Update pacman packages
-    if (pacman_count > 0) {
-        std::cout << CYAN << "\nUpdating official packages..." << RESET << std::endl;
-        show_progress("sudo pacman -Syu --noconfirm", "Updating");
+    if (release_info.empty()) {
+        std::cout << YELLOW << "Could not check for updates (network error)" << RESET << std::endl;
+        return;
+    }
+
+    std::regex tag_regex("\"tag_name\":\\s*\"([^\"]+)\"");
+    std::smatch tag_match;
+    std::string latest_version;
+    
+    if (std::regex_search(release_info, tag_match, tag_regex)) {
+        latest_version = tag_match[1].str();
+    } else {
+        std::cout << YELLOW << "Could not parse release information" << RESET << std::endl;
+        return;
+    }
+
+    if (current_version == latest_version) {
+        std::cout << GREEN << "✓ rinse is up to date (version " << latest_version << ")" << RESET << std::endl;
+        return;
+    }
+    std::cout << "Current version: " << YELLOW << current_version << RESET << std::endl;
+    std::cout << "New version: " << GREEN << latest_version << RESET << std::endl;
+    if (!confirm("Update?", true)) {
+        return;
+    }
+
+    // Extract SHA256 from release assets
+    std::regex sha_regex("\"name\":\\s*\"rinse\\.sha256\"[^}]*\"browser_download_url\":\\s*\"([^\"]+)\"");
+    std::smatch sha_match;
+    std::string sha_url;
+    
+    if (std::regex_search(release_info, sha_match, sha_regex)) {
+        sha_url = sha_match[1].str();
+    } else {
+        std::cout << YELLOW << "Warning: Could not find SHA256 checksum in release" << RESET << std::endl;
+        if (!confirm("Continue without verification?", false)) {
+            return;
+        }
+    }
+
+    // Download expected SHA256 if available
+    std::string expected_sha;
+    if (!sha_url.empty()) {
+        expected_sha = exec("curl -s -L " + sha_url);
+        expected_sha = trim(expected_sha);
+        // Extract just the hash if it's in "hash filename" format
+        if (expected_sha.find(' ') != std::string::npos) {
+            expected_sha = expected_sha.substr(0, expected_sha.find(' '));
+        }
+    }
+
+    // Determine binary URL based on update branch
+    std::string branch = sanitize_config(g_config.update_branch);
+    std::string download_url;
+    
+    if (branch == "main" || branch.empty()) {
+        download_url = "https://github.com/Rousevv/rinse/releases/latest/download/rinse";
+    } else {
+        download_url = "https://github.com/Rousevv/rinse/raw/" + branch + "/rinse";
+    }
+
+    // Try downloading and verifying up to 3 times NOTE: planning to add a config option to change this
+    std::string temp_binary;
+    bool download_verified = false;
+    
+    for (int attempt = 1; attempt <= 3; attempt++) {
+        if (attempt > 1) {
+            std::cout << YELLOW << "Retrying download (attempt " << attempt << "/3)..." << RESET << std::endl;
+        }
         
-        if (check_command("yay")) {
-            std::cout << CYAN << "Updating AUR packages..." << RESET << std::endl;
-            show_progress("yay -Syu --noconfirm", "Updating");
+        std::cout << CYAN << "Downloading latest rinse binary..." << RESET << std::endl;
+        
+        // Download to temporary location
+        temp_binary = "/tmp/rinse_update_" + std::to_string(time(nullptr));
+        std::string download_cmd = "curl -L -f -s -o " + sanitize_path(temp_binary) + " " + download_url;
+        
+        if (exec_status(download_cmd) != 0) {
+            std::cout << RED << "✗ Download failed" << RESET << std::endl;
+            exec_status(("rm -f " + sanitize_path(temp_binary)).c_str());
+            continue;
         }
+
+        // Verify download succeeded and file is not empty
+        if (!fs::exists(temp_binary) || fs::file_size(temp_binary) == 0) {
+            std::cout << RED << "✗ Downloaded file is invalid" << RESET << std::endl;
+            exec_status(("rm -f " + sanitize_path(temp_binary)).c_str());
+            continue;
+        }
+
+        // Verify SHA256 if we have an expected hash
+        if (!expected_sha.empty()) {
+            std::cout << CYAN << "Verifying checksum..." << RESET << std::endl;
+            std::string actual_sha = get_file_sha256(temp_binary);
+            
+            if (actual_sha.empty()) {
+                std::cout << RED << "✗ Could not calculate checksum" << RESET << std::endl;
+                exec_status(("rm -f " + sanitize_path(temp_binary)).c_str());
+                continue;
+            }
+            
+            if (actual_sha != expected_sha) {
+                std::cout << RED << "✗ Checksum mismatch!" << RESET << std::endl;
+                std::cout << "  Expected: " << expected_sha << std::endl;
+                std::cout << "  Got:      " << actual_sha << std::endl;
+                exec_status(("rm -f " + sanitize_path(temp_binary)).c_str());
+                continue;
+            }
+            
+            std::cout << GREEN << "✓ Checksum verified" << RESET << std::endl;
+        }
+        
+        download_verified = true;
+        break;
     }
-    
-    // Update flatpak packages
-    if (flatpak_count > 0) {
-        std::cout << CYAN << "\nUpdating Flatpak packages..." << RESET << std::endl;
-        show_progress("flatpak update -y", "Updating");
+
+    if (!download_verified) {
+        std::cout << RED << "Rinse update couldn't complete. Please try on a different, more trusted network or with a more stable connection." << RESET << std::endl;
+        return;
     }
+
+    if (exec_status(("chmod +x " + sanitize_path(temp_binary)).c_str()) != 0) {
+        std::cout << RED << "✗ Failed to make binary executable" << RESET << std::endl;
+        exec_status(("rm -f " + sanitize_path(temp_binary)).c_str());
+        return;
+    }
+
+    std::cout << CYAN << "Installing update..." << RESET << std::endl;
+
+    std::string rinse_path = exec("which rinse 2>/dev/null");
+    rinse_path = trim(rinse_path);
     
-    std::cout << GREEN << "\n✓ Update complete" << RESET << std::endl;
-    std::cout << YELLOW << "Restarting your system is recommended" << RESET << std::endl;
-    send_notification("System update complete");
+    if (rinse_path.empty()) {
+        rinse_path = "/usr/local/bin/rinse";
+    }
+
+    std::string install_cmd = "sudo cp " + sanitize_path(temp_binary) + " " + sanitize_path(rinse_path);
+    if (exec_status(install_cmd.c_str()) != 0) {
+        std::cout << RED << "✗ Failed to install update" << RESET << std::endl;
+        std::cout << YELLOW << "You may need to run: sudo cp " << temp_binary << " " << rinse_path << RESET << std::endl;
+        exec_status(("rm -f " + sanitize_path(temp_binary)).c_str());
+        return;
+    }
+
+    // Cleanup temp file
+    exec_status(("rm -f " + sanitize_path(temp_binary)).c_str());
+
+    // Save new version
+    save_version(latest_version);
+
+    std::cout << GREEN << "✓ rinse updated successfully to version " << latest_version << RESET << std::endl;
+    std::cout << CYAN << "The new version will be used on the next invocation of rinse" << RESET << std::endl;
     
-    update_rinse();
+    send_notification("rinse updated to version " + latest_version);
 }
 
 void lookup_packages(const std::vector<std::string>& search_terms = {}) {

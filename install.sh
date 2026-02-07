@@ -5,7 +5,7 @@
 set -euo pipefail
 
 # --- Configuration ---
-REPO_URL="https://github.com/RousevGH/rinse"
+REPO_URL="https://github.com/Rousevv/rinse"
 # Create a unique temp directory using the script's PID
 TEMP_DIR="/tmp/rinse-install-$$"
 INSTALL_DIR="/usr/local/bin"

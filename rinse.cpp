@@ -794,7 +794,7 @@ void update_rinse() {
 
     if (exec_status("chmod +x /tmp/rinse/rinse") != 0) {
         std::cout << RED << "✗ Failed to make binary executable" << RESET << std::endl;
-        exec_status("rm -f /tmp/rinse/rinse").c_str());
+        exec_status("rm -f /tmp/rinse/rinse");
         return;
     }
 
@@ -810,7 +810,6 @@ void update_rinse() {
     std::string install_cmd = "sudo cp /tmp/rinse/rinse " + sanitize_path(rinse_path);
     if (exec_status(install_cmd.c_str()) != 0) {
         std::cout << RED << "✗ Failed to install update" << RESET << std::endl;
-        std::cout << YELLOW << "You may need to run: sudo cp " << temp_binary << " " << rinse_path << RESET << std::endl;
         exec_status("rm -f /tmp/rinse/rinse");
         return;
     }

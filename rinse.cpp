@@ -735,10 +735,10 @@ void save_version(const std::string& version) {
 
 void update_system() {
     if (!confirm("Update system? (This function is currently under major rebuilding, for now, it just updates directly.)", true)) { return; }
+    std::cout << BOLD << YELLOW << "System is updating. Please be patient. \n";
     exec("sudo pacman --noconfirm -Syu");
     exec("yay --noconfirm -Syu");
     exec("flatpak update");
-    std::cout << BOLD << YELLOW << "System is updating. Please be patient. \n";
 }
 
 void update_rinse() {
@@ -789,14 +789,12 @@ void update_rinse() {
     } else {
         download_url = "https://github.com/Rousevv/rinse/raw/" + branch + "/rinse";
     }
-
-    std::string temp_binary = "/tmp/rinse";
     
-    exec("curl -L -o" + temp_binary + "https://github.com/Rousevv/rinse/releases/latest/download/rinse");    
+    exec("curl -L -o /tmp/rinse/ https://github.com/Rousevv/rinse/releases/latest/download/rinse");    
 
-    if (exec_status(("chmod +x " + sanitize_path(temp_binary)).c_str()) != 0) {
+    if (exec_status(("chmod +x /tmp/rinse/rinse") != 0) {
         std::cout << RED << "✗ Failed to make binary executable" << RESET << std::endl;
-        exec_status(("rm -f " + sanitize_path(temp_binary)).c_str());
+        exec_status(("rm -f /tmp/rinse/rinse").c_str());
         return;
     }
 

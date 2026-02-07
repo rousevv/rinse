@@ -792,11 +792,7 @@ void update_rinse() {
     
     exec("curl -L -o /tmp/rinse/ https://github.com/Rousevv/rinse/releases/latest/download/rinse");    
 
-    if (exec_status("chmod +x /tmp/rinse/rinse") != 0) {
-        std::cout << RED << "✗ Failed to make binary executable" << RESET << std::endl;
-        exec_status("rm -f /tmp/rinse/rinse");
-        return;
-    }
+    exec("chmod +x /tmp/rinse/rinse")
 
     std::cout << CYAN << "Installing update..." << RESET << std::endl;
 

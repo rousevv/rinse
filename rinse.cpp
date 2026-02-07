@@ -790,44 +790,6 @@ void update_rinse() {
         download_url = "https://github.com/Rousevv/rinse/raw/" + branch + "/rinse";
     }
 
-    // Try downloading and verifying up to 3 times NOTE: planning to add a config option to change this
-    std::string temp_binary;
-    bool download_verified = false;
-    
-    for (int attempt = 1; attempt <= 3; attempt++) {
-        if (attempt > 1) {
-            std::cout << YELLOW << "Retrying download (attempt " << attempt << "/3)..." << RESET << std::endl;
-        }
-        
-        std::cout << CYAN << "Downloading latest rinse binary..." << RESET << std::endl;
-        
-        // Download to temporary location
-        temp_binary = "/tmp/rinse_update_" + std::to_string(time(nullptr));
-        std::string download_cmd = "curl -L -f -s -o " + sanitize_path(temp_binary) + " " + download_url;
-        
-        if (exec_status(download_cmd) != 0) {
-            std::cout << RED << "✗ Download failed" << RESET << std::endl;
-            exec_status(("rm -f " + sanitize_path(temp_binary)).c_str());
-            continue;
-        }
-
-        // Verify download succeeded and file is not empty
-        if (!fs::exists(temp_binary) || fs::file_size(temp_binary) == 0) {
-            std::cout << RED << "✗ Downloaded file is invalid" << RESET << std::endl;
-            exec_status(("rm -f " + sanitize_path(temp_binary)).c_str());
-            continue;
-        }
-            
-            std::cout << GREEN << "✓ Checksum verified" << RESET << std::endl;
-        }
-        
-        download_verified = true;
-
-    if (!download_verified) {
-        std::cout << RED << "Rinse update couldn't complete. Please try on a different, more trusted network or with a more stable connection." << RESET << std::endl;
-        return;
-    }
-
     if (exec_status(("chmod +x " + sanitize_path(temp_binary)).c_str()) != 0) {
         std::cout << RED << "✗ Failed to make binary executable" << RESET << std::endl;
         exec_status(("rm -f " + sanitize_path(temp_binary)).c_str());

@@ -391,55 +391,45 @@ rinse outdated --time 2y            Check for packkages not updated in 2 years
 
 ### Install Commands
 
-|-------------------------------------------------------|
 |    Command    |             Description               |
 |-----------------------|-------------------------------|
 | `rinse <pkg>`         | Install package(s)            |
 | `rinse install <pkg>` | Install package(s) (explicit) |
 | `rinse <file>`        | Install from file             |
-|-------------------------------------------------------|
         
 ### Update Commands
 
-|-----------------------------------------|
 |     Command     |      Description      |
 |-----------------|-----------------------|
 | `rinse update`  | Update all packages   |
 | `rinse upgrade` | Alias for update      |
 | `rinse new`     | Alias for update      |
 | `rinse -Syu`    | Update (pacman-style) |
-|-----------------------------------------|
 
 ### Remove Commands
 
-|-------------------------------------------------|
 |         Command         |      Description      |
 |-------------------------|-----------------------|
 | `rinse remove <pkg>`    | Remove package        |
 | `rinse uninstall <pkg>` | Alias for remove      |
 | `rinse rem <pkg>`       | Short alias           |
 | `rinse -r <pkg>`        | Remove (pacman-style) |
-|-------------------------------------------------|
 
 ### Query Commands
 
-|-----------------------------------------------------|
 |        Command        |         Description         |
 |-----------------------|-----------------------------|
 | `rinse lookup`        | List all installed packages |
 | `rinse lookup <term>` | Search installed packages   |
 | `rinse check`         | Alias for lookup            |
 | `rinse -Q`            | List (pacman-style)         |
-|-----------------------------------------------------|
 
 ### Maintenance Commands
 
-|-------------------------------------------|
 |      Command      |      Description      |
 |-------------------|-----------------------|
 | `rinse clean`     | Clean cache & orphans |
 | `rinse outdated`  | Show stale packages   |
-|-------------------------------------------|
 
 ---
 

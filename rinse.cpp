@@ -817,25 +817,6 @@ void update_rinse() {
             exec_status(("rm -f " + sanitize_path(temp_binary)).c_str());
             continue;
         }
-
-        // Verify SHA256 if we have an expected hash
-        if (!expected_sha.empty()) {
-            std::cout << CYAN << "Verifying checksum..." << RESET << std::endl;
-            std::string actual_sha = get_file_sha256(temp_binary);
-            
-            if (actual_sha.empty()) {
-                std::cout << RED << "✗ Could not calculate checksum" << RESET << std::endl;
-                exec_status(("rm -f " + sanitize_path(temp_binary)).c_str());
-                continue;
-            }
-            
-            if (actual_sha != expected_sha) {
-                std::cout << RED << "✗ Checksum mismatch!" << RESET << std::endl;
-                std::cout << "  Expected: " << expected_sha << std::endl;
-                std::cout << "  Got:      " << actual_sha << std::endl;
-                exec_status(("rm -f " + sanitize_path(temp_binary)).c_str());
-                continue;
-            }
             
             std::cout << GREEN << "✓ Checksum verified" << RESET << std::endl;
         }

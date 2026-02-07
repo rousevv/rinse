@@ -792,8 +792,6 @@ void update_rinse() {
     exec("curl -L -o /tmp/rinse https://github.com/Rousevv/rinse/releases/latest/download/rinse");    
 
     exec("chmod +x /tmp/rinse");
-    
-    rinse_path = "/usr/bin/rinse";
 
     std::string update_script = "/tmp/rinse_updater.sh";
     std::ofstream script(update_script);

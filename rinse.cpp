@@ -733,11 +733,6 @@ void save_version(const std::string& version) {
     file << version;
 }
 
-std::string get_file_sha256(const std::string& filepath) {
-    std::string result = exec("sha256sum " + sanitize_path(filepath) + " 2>/dev/null | awk '{print $1}'");
-    return trim(result);
-}
-
 void update_system() {
     if (!confirm("Update system? (This function is currently under major rebuilding, for now, it just updates directly.)", true)) { return; }
     exec("sudo pacman --noconfirm -Syu");
@@ -783,31 +778,6 @@ void update_rinse() {
     std::cout << "New version: " << GREEN << latest_version << RESET << std::endl;
     if (!confirm("Update?", true)) {
         return;
-    }
-
-    // Extract SHA256 from release assets
-    std::regex sha_regex("\"name\":\\s*\"rinse\\.sha256\"[^}]*\"browser_download_url\":\\s*\"([^\"]+)\"");
-    std::smatch sha_match;
-    std::string sha_url;
-    
-    if (std::regex_search(release_info, sha_match, sha_regex)) {
-        sha_url = sha_match[1].str();
-    } else {
-        std::cout << YELLOW << "Warning: Could not find SHA256 checksum in release" << RESET << std::endl;
-        if (!confirm("Continue without verification?", false)) {
-            return;
-        }
-    }
-
-    // Download expected SHA256 if available
-    std::string expected_sha;
-    if (!sha_url.empty()) {
-        expected_sha = exec("curl -s -L " + sha_url);
-        expected_sha = trim(expected_sha);
-        // Extract just the hash if it's in "hash filename" format
-        if (expected_sha.find(' ') != std::string::npos) {
-            expected_sha = expected_sha.substr(0, expected_sha.find(' '));
-        }
     }
 
     // Determine binary URL based on update branch

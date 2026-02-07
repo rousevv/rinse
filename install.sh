@@ -1,5 +1,4 @@
 #!/bin/bash
-# install.sh - Install rinse to /usr/local/bin
 
 # Strict mode: Exit on error, undefined vars, and pipe failures
 set -euo pipefail
@@ -8,7 +7,7 @@ set -euo pipefail
 REPO_URL="https://github.com/Rousevv/rinse"
 # Create a unique temp directory using the script's PID
 TEMP_DIR="/tmp/rinse-install-$$"
-INSTALL_DIR="/usr/local/bin"
+INSTALL_DIR="/usr/bin"
 CONFIG_DIR="$HOME/.config/rinse"
 
 # --- Colors ---
@@ -52,7 +51,7 @@ if ! command -v git &> /dev/null; then
 fi
 
 if ! command -v g++ &> /dev/null; then
-    error "g++ is required but not installed."
+    error "g++ is required but not installed. Consider downloading the pre-compiled binary otherwise."
     exit 1
 fi
 

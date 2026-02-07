@@ -1,14 +1,7 @@
 # rinse
-NOTE: This readme is AI generated because i didn't want to sit down for sevral hours to do this. Small bits and pieces of the code for stuff i don't know how to do personally are also AI.
-> Fast CLI frontend for pacman and AUR - Arch Linux package management made simple. This isn't meant for anyone to use, i just made it for myself and decided to post in on github. Feel free to use it, but dont be surprised if some stuff is bad/missing.
+wrapper for pacman, the AUR and flatpak. (This project is currently a rough draft, please review code before using, and if you fix something, send a PR.)
 
-rinse is a lightweight terminal tool that wraps pacman and yay.
-
----
-
-## 🚀 Quick Start
-
-### Installation
+## Installation
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/rousevv/rinse/main/install.sh | bash
@@ -19,44 +12,40 @@ Or manually:
 git clone https://github.com/rousevv/rinse.git
 cd rinse
 g++ -std=c++17 -O3 rinse.cpp -o rinse
-sudo cp rinse /usr/local/bin/
+sudo cp rinse /usr/bin/
 ```
+(the install.sh literally just automates these commands)
 
 ### First Use
 
 ```bash
-rinse firefox              # Install Firefox
-rinse update               # Update your system
-rinse --help               # See all commands
+rinse firefox              Installs firefox
+rinse update               Update your system (updates pacman, AUR and flatpak apps.)
+rinse --help
 ```
 
 ---
 
-## 📦 Installing Packages
+## Installing Packages
 
 ### Basic Install
 
 ```bash
-rinse <package>            # Install a single package
-rinse firefox              # Example: install Firefox
-rinse install firefox      # Explicit install command (same thing)
+rinse firefox
+rinse install firefox
+rinse -S firefox
+...
 ```
 
 ### Multiple Packages
 
 ```bash
-rinse firefox discord obsidian    # Install multiple at once
+rinse firefox discord obsidian         Install multiple packages at once
 ```
 
 ### How It Works
 
-rinse automatically:
-1. Checks if the package exists in **pacman** (official repos)
-2. If not found, checks the **AUR**
-3. Shows you the last update date
-4. Asks for confirmation
-5. Installs official packages first, then AUR packages
-6. Sends a desktop notification when done (if enabled)
+rinse automatically checks if the package exists on the official repos, if not found, checks the AUR using yay (this is something i wanna phase out gradually, as i'd rather be using a native AUR handler, although it will probably not be anytime soon.) and sends a desktop notification when done (changable in config)
 
 ### Package Status Messages
 
@@ -92,7 +81,7 @@ Package "nonexistent" not found on pacman or the AUR.
 If the package is a .tar.gz file you want to install, run "rinse <path/to/file>"
 ```
 
-### Installing from Files
+### Installing from Files - this currently doesnt work well.
 
 ```bash
 rinse ./package.pkg.tar.zst    # Install from local pacman package
@@ -102,24 +91,26 @@ rinse /absolute/path/file.zst  # Works with absolute paths too
 
 ---
 
-## 🔄 Updating Your System
+## Updating Your System
 
 ### Update Everything
 
 ```bash
-rinse update               # Updates pacman + AUR packages
-rinse upgrade              # Alias for update
-rinse new                  # Another alias
-rinse -Syu                 # pacman-style syntax
+rinse update
+rinse upgrade
+rinse new
+rinse -Syu
 ```
+all work.
 
-### What Happens
+### What it does
 
-1. Checks for outdated packages
+1. Checks for outdated packages on pacman, the AUR *AND* flatpak.
 2. Shows you how many are outdated
 3. Updates official repos with `pacman -Syu`
-4. Updates AUR packages with `yay -Syu` (if yay is installed)
-5. Sends notification when complete
+4. Updates AUR packages with `yay -Syu`
+5. Updates flatpak apps with `flatpak update`
+6. Sends notification when complete
 
 ### Example Output
 
@@ -136,15 +127,15 @@ Updating AUR packages...
 
 ---
 
-## 🗑️ Removing Packages
+## Removing Packages
 
 ### Basic Removal
 
 ```bash
-rinse remove <package>     # Remove a package
-rinse uninstall <package>  # Alias
-rinse rem <package>        # Short alias
-rinse -r <package>         # pacman-style
+rinse remove <package>
+rinse uninstall <package>
+rinse rem <package>
+rinse -r <package>
 ```
 
 ### Example
@@ -160,30 +151,24 @@ Remove orphan dependencies? [Y/n] y
 ✓ Removal complete
 ```
 
-### What It Does
-
-1. Confirms you want to remove the package
-2. Asks if you want to remove orphan dependencies (packages installed as dependencies but no longer needed)
-3. Removes everything with a single pacman call
-
 ---
 
-## 🔍 Searching Installed Packages
+## Searching Installed Packages
 
 ### List All Packages
 
 ```bash
-rinse lookup               # List all installed packages
-rinse check                # Alias
-rinse -Q                   # pacman-style
+rinse lookup <package>
+rinse check <package>
+rinse -Q <package>
 ```
 
 ### Fuzzy Search
 
 ```bash
-rinse check firefox        # Find packages matching "firefox"
-rinse check fire           # Partial match - finds "firefox"
-rinse check fox            # Still finds "firefox"
+rinse check firefox        Find packages matching "firefox"
+rinse check fire           Partial match, finds "firefox"
+rinse check fox            Still finds "firefox"
 ```
 
 ### Search Multiple Terms
@@ -198,23 +183,16 @@ rinse check browser editor    # Find packages matching either term
 $ rinse check fire
 Found 1 package:
   firefox 122.0-1
-
-$ rinse check browser
-Found 3 packages:
-  firefox 122.0-1
-  chromium 121.0-1
-  qutebrowser 3.0.0-1
 ```
 
 **Features:**
 - Case-insensitive search
 - Substring matching (you don't need the exact name)
 - Shows package name and version
-- Returns nothing if no matches
 
 ---
 
-## 🧹 Cleaning Up
+## Cleaning Up
 
 ### Clean Cache and Orphans
 
@@ -226,8 +204,7 @@ rinse clean
 
 1. Cleans pacman package cache (`pacman -Sc`)
 2. Cleans AUR cache if yay is installed (`yay -Sc`)
-3. Asks if you want to remove orphan packages
-4. Removes orphans if you confirm
+3. Removes orphan packages
 
 ### Example Output
 
@@ -244,7 +221,7 @@ Removing orphan packages...
 
 ---
 
-## 📅 Finding Outdated Packages
+## Finding Outdated Packages - buggy right now
 
 ### Check Stale Packages
 
@@ -277,22 +254,22 @@ Found 5 outdated packages:
 
 ---
 
-## 🧪 Dry Run Mode
+## Dry Run Mode
 
 ### Preview Changes Without Executing
 
 ```bash
-rinse --dry-run <command>  # Long form
-rinse -n <command>         # Short form
-rinse dry <command>        # Word form
+rinse --dry-run <command>
+rinse -n <command>
+rinse dry <command>
 ```
 
 ### Examples
 
 ```bash
-rinse -n firefox           # See what would happen
-rinse --dry-run update     # Preview system update
-rinse dry clean            # See what would be cleaned
+rinse -n firefox           See what would happen
+rinse --dry-run update     Preview system update
+rinse dry clean            See what would be cleaned (pun intended, i wouldve made it rinse clean dry, but that wouldn't make much sense syntax-wise)
 ```
 
 ### Output
@@ -302,13 +279,13 @@ rinse dry clean            # See what would be cleaned
 ```
 
 **Use this when:**
-- You're testing rinse
+- You're testing
 - You want to see what packages would be affected
-- You're writing scripts
+- You're writing scripts (not reccomended to use this as a dependancy for a script, as it literally just stacks other dependencies in one, but feel free to ig)
 
 ---
 
-## ⚙️ Configuration
+## Configuration
 
 ### Config File Location
 
@@ -320,45 +297,62 @@ rinse dry clean            # See what would be cleaned
 
 ```bash
 # rinse configuration file
-# Lines starting with # are comments
+# Save this to: ~/.config/rinse/rinse.conf
+# Lines starting with # are comments and will be ignored
+
+# ============================================
+# BUILD SETTINGS
+# ============================================
 
 # Keep build files after AUR installation
+# If true, build directories will be kept in /tmp for debugging
+# If false (default), build files are automatically cleaned up
+# Default: false
 keep_build = false
 
-# Send desktop notifications
+# ============================================
+# NOTIFICATION SETTINGS
+# ============================================
+
+# Send desktop notifications when operations complete
+# Requires notify-send to be installed (usually part of libnotify)
+# Notifications appear when packages are installed, updated, or removed
+# Default: true
 notify = true
 
-# Default time threshold for outdated packages
+# ============================================
+# UPDATE SETTINGS
+# ============================================
+
+# Automatically check for rinse updates on 'rinse update'
+# If true, rinse will check GitHub for new versions and offer to update itself
+# If false, rinse will skip self-update checks entirely
+# You can manually update by running the install script again
+# Default: true
+auto_update = true
+
+# Branch to pull updates from
+# Options: "main" (stable) or "experimental" (bleeding-edge features)
+# Use "main" for stable, production-ready releases
+# Use "experimental" to test new features before they're merged to main
+# Default: main
+update_branch = experimental
+
+# ============================================
+# PACKAGE MANAGEMENT SETTINGS
+# ============================================
+
+# Default time threshold for 'rinse outdated' command
+# Format: Nd (days), Nm (months), Ny (years)
+# Examples: 30d (30 days), 6m (6 months), 2y (2 years)
+# This finds packages that haven't been updated upstream in the specified time
+# Default: 6m
 outdated_time = 6m
-```
-
-### Options Explained
-
-**`keep_build`** (true/false)
-- When installing AUR packages, keep the build directory
-- Default: `false` (deletes build files after install)
-
-**`notify`** (true/false)
-- Send desktop notifications via `notify-send` when operations complete
-- Default: `true`
-- Requires `notify-send` to be installed
-
-**`outdated_time`** (time value)
-- Default threshold for `rinse outdated` command
-- Format: `Nd` (days), `Nm` (months), `Ny` (years)
-- Default: `6m` (6 months)
-
-### Creating/Editing Config
-
-The config file is created automatically on first run. To edit:
-
-```bash
-nano ~/.config/rinse/rinse.conf
 ```
 
 ---
 
-## 🚩 Command-Line Flags
+## Command-Line Flags
 
 ### Global Flags (work with any command)
 
@@ -385,115 +379,73 @@ nano ~/.config/rinse/rinse.conf
 ### Examples
 
 ```bash
-rinse -n firefox                    # Dry run install
-rinse --full-log update             # See all pacman output
-rinse -k install yay                # Keep yay build files
-rinse outdated --time 2y            # 2-year threshold
+rinse -n firefox                    Dry run install
+rinse --full-log update             See all output
+rinse -k install fastfech           Keep yay build files
+rinse outdated --time 2y            Check for packkages not updated in 2 years
 ```
 
 ---
 
-## 🎯 Command Reference
+## Command Reference
 
 ### Install Commands
 
-| Command | Description |
-|---------|-------------|
-| `rinse <pkg>` | Install package(s) |
+|-------------------------------------------------------|
+|    Command    |             Description               |
+|-----------------------|-------------------------------|
+| `rinse <pkg>`         | Install package(s)            |
 | `rinse install <pkg>` | Install package(s) (explicit) |
-| `rinse <file>` | Install from file |
-
+| `rinse <file>`        | Install from file             |
+|-------------------------------------------------------|
+        
 ### Update Commands
 
-| Command | Description |
-|---------|-------------|
-| `rinse update` | Update all packages |
-| `rinse upgrade` | Alias for update |
-| `rinse new` | Alias for update |
-| `rinse -Syu` | Update (pacman-style) |
+|-----------------------------------------|
+|     Command     |      Description      |
+|-----------------|-----------------------|
+| `rinse update`  | Update all packages   |
+| `rinse upgrade` | Alias for update      |
+| `rinse new`     | Alias for update      |
+| `rinse -Syu`    | Update (pacman-style) |
+|-----------------------------------------|
 
 ### Remove Commands
 
-| Command | Description |
-|---------|-------------|
-| `rinse remove <pkg>` | Remove package |
-| `rinse uninstall <pkg>` | Alias for remove |
-| `rinse rem <pkg>` | Short alias |
-| `rinse -r <pkg>` | Remove (pacman-style) |
+|-------------------------------------------------|
+|         Command         |      Description      |
+|-------------------------|-----------------------|
+| `rinse remove <pkg>`    | Remove package        |
+| `rinse uninstall <pkg>` | Alias for remove      |
+| `rinse rem <pkg>`       | Short alias           |
+| `rinse -r <pkg>`        | Remove (pacman-style) |
+|-------------------------------------------------|
 
 ### Query Commands
 
-| Command | Description |
-|---------|-------------|
-| `rinse lookup` | List all installed packages |
-| `rinse lookup <term>` | Search installed packages |
-| `rinse check` | Alias for lookup |
-| `rinse -Q` | List (pacman-style) |
+|-----------------------------------------------------|
+|        Command        |         Description         |
+|-----------------------|-----------------------------|
+| `rinse lookup`        | List all installed packages |
+| `rinse lookup <term>` | Search installed packages   |
+| `rinse check`         | Alias for lookup            |
+| `rinse -Q`            | List (pacman-style)         |
+|-----------------------------------------------------|
 
 ### Maintenance Commands
 
-| Command | Description |
-|---------|-------------|
-| `rinse clean` | Clean cache & orphans |
-| `rinse outdated` | Show stale packages |
+|-------------------------------------------|
+|      Command      |      Description      |
+|-------------------|-----------------------|
+| `rinse clean`     | Clean cache & orphans |
+| `rinse outdated`  | Show stale packages   |
+|-------------------------------------------|
 
 ---
-
-## 💡 Tips & Tricks
-
-### Combine with Other Tools
-
-```bash
-rinse check | grep python      # Find all Python packages
-rinse outdated --time 2y > old.txt   # Save old packages to file
-```
-
-### Batch Operations
-
-```bash
-# Install your entire setup from a list
-cat packages.txt | xargs rinse
-```
-
-### Check Before Update
-
-```bash
-rinse -n update                # See what would be updated
-rinse update                   # Then actually update
-```
-
-### Find Zombie Packages
-
-```bash
-rinse outdated --time 3y       # Packages abandoned for 3+ years
-```
-
----
-
-## 🛠️ Troubleshooting
-
-### "yay not found"
-
-If you try to install an AUR package and yay isn't installed:
-```
-yay (AUR frontend) not found. Install? [Y/n]
-```
-
-rinse will offer to auto-install yay for you.
-
-### Package Not Found
-
-If rinse can't find a package in pacman or AUR:
-```
-Package "xyz" not found on pacman or the AUR.
-If the package is a .tar.gz file you want to install, run "rinse <path/to/file>"
-```
-
-Double-check the package name on [archlinux.org/packages](https://archlinux.org/packages/) or [aur.archlinux.org](https://aur.archlinux.org/).
 
 ### Permission Errors
 
-rinse uses `sudo` for system operations. Make sure your user is in the `wheel` group:
+rinse uses `sudo` for system operations (like installing packages via pacman). Make sure your user is in the `wheel` group:
 ```bash
 sudo usermod -aG wheel $USER
 ```
@@ -507,73 +459,21 @@ rinse --full-log update        # Shows all pacman output
 
 ---
 
-## 🔧 Requirements
+## Requirements
 
 - **Arch Linux** (or Arch-based distro like Manjaro, EndeavourOS, CachyOS, etc.)
-- **pacman** (pre-installed)
+- **pacman** (Arch's package manager)
 - **g++** with C++17 support (for building, not needed if you install the pre-compiled package)
-- **yay** (optional, auto-installed when needed)
+- **yay** (auto-installed when needed)
 - **notify-send** (optional, for notifications)
 
 ---
 
-## 🎨 Design Philosophy
+## Contributing
 
-rinse follows these principles:
-
-1. **CLI-first** - No GUI, no TUI, just fast terminal commands
-2. **Smart defaults** - Minimal config, works out of the box
-3. **Safe operations** - Confirmations before system changes
-4. **Clean output** - No verbose spam, just what you need
-5. **Arch-idiomatic** - Respects pacman conventions
-6. **Single binary** - One file, no dependencies
-
----
-
-## 📝 Examples Gallery
-
-### Daily Workflow
-
-```bash
-# Morning routine
-rinse update                   # Update everything
-rinse clean                    # Clean old packages
-
-# Install new software
-rinse obsidian discord         # Install apps
-rinse check obsidian           # Verify it's installed
-
-# Remove bloat
-rinse outdated --time 1y       # Find old packages
-rinse remove <old-package>     # Remove unwanted ones
-```
-
-### System Maintenance
-
-```bash
-# Monthly cleanup
-rinse update
-rinse clean
-rinse outdated --time 6m
-```
-
-### Development Setup
-
-```bash
-# Install dev tools
-rinse git base-devel vim neovim
-rinse check dev                # Find all dev packages
-```
-
----
-
-## 🤝 Contributing
-
-Found a bug? Want a feature? Open an issue or PR on [GitHub](https://github.com/rousevv/rinse).
+Found a bug? Want a feature? Open an issue or PR!
 
 ---
 
 also, you read the whole README.md, unless you just outright scrolled to the bottom, but here's a fun fact:
 the r in rinse stands for rousev, being me, the ins stands for install and e because rinse is a real word and rins doesnt sound good, hence: rinse
-
-**Made with ❤️ by Rousev for Arch Linux users who want a cleaner pacman workflow.**
